@@ -1,0 +1,6 @@
+{
+  "name": "Kun Tartibi - Task & Routine Planner",
+  "description": "Kun tartibini boshqarish, vazifalarni rejalashtirish va eslatmalar yuborish uchun qulay va zamonaviy mobil ilova.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
