@@ -57,7 +57,7 @@ class JarvisRuntime private constructor(context: Context) {
     private suspend fun task(query: String): Task {
         require(query.isNotBlank()) { "Vazifa nomini ayting." }
         val all = repo.allTasks.first()
-        val id = query.removePrefix("#").toIntOrNull()
+        val id = query.removePrefix("#").removePrefix("raqam ").toIntOrNull()
         val exact = all.filter { (id != null && it.id == id) || JarvisCommands.normalize(it.title) == query }
         val found = if (exact.isNotEmpty()) exact else all.filter { JarvisCommands.normalize(it.title).contains(query) }
         require(found.isNotEmpty()) { "'$query' vazifasi topilmadi." }
@@ -67,7 +67,7 @@ class JarvisRuntime private constructor(context: Context) {
     private suspend fun habit(query: String): Habit {
         require(query.isNotBlank()) { "Odat nomini ayting." }
         val all = repo.allHabits.first()
-        val exact = all.filter { JarvisCommands.normalize(it.title) == query || "#${it.id}" == query }
+        val exact = all.filter { JarvisCommands.normalize(it.title) == query || it.id == query.removePrefix("#").removePrefix("raqam ").toIntOrNull() }
         val found = if(exact.isNotEmpty()) exact else all.filter { JarvisCommands.normalize(it.title).contains(query) }
         require(found.size == 1) { "Odat topilmadi yoki nom bir nechta odatga mos. Aniq nom yoki #raqamni yozing." }
         return found.single()

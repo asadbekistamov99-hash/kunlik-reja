@@ -20,6 +20,6 @@ class GreetingScreenshotTest {
         rule.onRoot().captureRoboImage(filePath = "build/previews/dashboard.png")
         rule.onNodeWithTag("fab_jarvis_ai").performClick()
         rule.onNodeWithTag("dialog_jarvis").assertExists()
-        rule.onRoot().captureRoboImage(filePath = "build/previews/jarvis.png")
+        rule.onNodeWithTag("dialog_jarvis").captureRoboImage(filePath = "build/previews/jarvis.png")
     }
 }

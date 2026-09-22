@@ -48,7 +48,7 @@ Bu yechim Android `SpeechRecognizer` sessiyalaridan foydalanadi, maxsus offline 
 | Mavzu | `Tungi rejim`, `Yorug' rejim`, `Tizim mavzusi` |
 | Sinov / yordam | `Test eslatma`, `Test budilnik`, `Yordam` |
 
-Murakkab buyruqlarda `/` o'rniga **ajrat** deyish mumkin. Bir xil nomdagi vazifalarda Jarvis raqam bilan aniqlashtirishni so'raydi. O'chirish tasdiq talab qiladi, takroriy “bajarildi” esa vazifani qayta ochmaydi. Fon rejimida ekran/ulashish kerak bo'lgan amal ilovani ochguncha kutiladi; boshqa ilovalarga avtomatik xabar yuborilmaydi.
+Murakkab buyruqlarda `/` o'rniga **ajrat** deyish mumkin. Bir xil nomdagi vazifalarda Jarvis raqam bilan aniqlashtirishni so'raydi (`#12` yoki ovoz bilan `raqam 12`). O'chirish tasdiq talab qiladi, takroriy “bajarildi” esa vazifani qayta ochmaydi. Fon rejimida ekran/ulashish kerak bo'lgan amal ilovani ochguncha kutiladi; boshqa ilovalarga avtomatik xabar yuborilmaydi.
 
 Fokus muddati qurilma xotirasida saqlanadi. Taymer tugashi vazifani avtomatik bajarilgan deb belgilamaydi. Eslatmalar rebootdan keyin bazadan tiklanadi; aniq budilnik ruxsatisiz Android kechiktirishi mumkin.
 

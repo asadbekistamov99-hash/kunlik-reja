@@ -313,7 +313,8 @@ class MainActivity : ComponentActivity() {
                     }
 
                     // Task Detail / Action Dialog (Edit, Delete, Toggle Complete)
-                    selectedTaskForAction?.let { task ->
+                    selectedTaskForAction?.let { selected ->
+                        val task = allTasks.find { it.id == selected.id } ?: selected
                         TaskActionDialog(
                             task = task,
                             onDismiss = { selectedTaskForAction = null },
@@ -325,6 +326,7 @@ class MainActivity : ComponentActivity() {
                             onDelete = { taskToDelete ->
                                 viewModel.deleteTask(taskToDelete)
                             },
+                            onUpdateTask = viewModel::updateTask,
                             onToggleComplete = { taskToToggle ->
                                 viewModel.toggleTaskCompletion(taskToToggle)
                             }
