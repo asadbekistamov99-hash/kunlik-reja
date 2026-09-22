@@ -1,5 +1,6 @@
 package com.example.ui.theme
 
+import androidx.compose.ui.unit.dp
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -20,7 +21,12 @@ private val DarkColorScheme = darkColorScheme(
     onPrimary = Color.Black,
     onSecondary = Color.Black,
     onBackground = Color(0xFFE2E2E6),
-    onSurface = Color(0xFFE2E2E6)
+    onSurface = Color(0xFFE6EEFF),
+    primaryContainer = Color(0xFF23375C),
+    onPrimaryContainer = Color(0xFFDCE6FF),
+    surfaceVariant = Color(0xFF20304A),
+    onSurfaceVariant = Color(0xFFBCCAE0),
+    outline = Color(0xFF61718C)
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -34,7 +40,10 @@ private val LightColorScheme = lightColorScheme(
     onBackground = Color(0xFF1A1C24),
     onSurface = Color(0xFF1A1C24),
     primaryContainer = IndigoContainer,
-    onPrimaryContainer = IndigoPrimary
+    onPrimaryContainer = Color(0xFF20356F),
+    surfaceVariant = Color(0xFFE8EDF5),
+    onSurfaceVariant = Color(0xFF4D5D75),
+    outline = Color(0xFF73839A)
 )
 
 @Composable
@@ -55,6 +64,11 @@ fun KunTartibiTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = androidx.compose.material3.Shapes(
+            small = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            medium = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+            large = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
+        ),
         content = content
     )
 }

@@ -1,402 +1,93 @@
 package com.example.jarvis
 
 import android.Manifest
-import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.SheetState
-import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
-import com.example.data.Task
+import androidx.compose.ui.unit.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.viewmodel.TaskViewModel
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun JarvisDialog(
-    sheetState: SheetState,
-    viewModel: TaskViewModel,
-    onDismiss: () -> Unit
-) {
+fun JarvisDialog(sheetState: SheetState, viewModel: TaskViewModel, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-
-    val voiceManager = remember { JarvisVoiceManager(context) }
-    val voiceState by voiceManager.voiceState.collectAsState()
-    val recognizedText by voiceManager.recognizedText.collectAsState()
-
-    var typedCommand by remember { mutableStateOf("") }
-    var lastResponseText by remember { mutableStateOf("Salom! Men Jarvis yordamchingizman. Qanday vazifa yoki rejangiz bor?") }
-    var lastParsedResponse by remember { mutableStateOf<JarvisParsedResponse?>(null) }
-    var isProcessing by remember { mutableStateOf(false) }
-
-    val allTasks by viewModel.allTasks.collectAsState()
-    val tasksSummary = remember(allTasks) {
-        allTasks.take(5).joinToString("; ") { "${it.title} (${it.timeString})" }
+    val runtime = remember { JarvisRuntime.get(context) }
+    val status by runtime.status.collectAsStateWithLifecycle()
+    var input by remember { mutableStateOf("") }
+    var showHelp by remember { mutableStateOf(false) }
+    val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        if(granted[Manifest.permission.RECORD_AUDIO] == true) JarvisListeningService.start(context)
+        else runtime.report("Mikrofon ruxsati berilmadi. Matnli buyruqlar ishlaydi.")
     }
-
-    // Permission Launcher for Mic
-    val micPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            voiceManager.startListening()
-        } else {
-            lastResponseText = "Mikrofon ruxsati berilmadi. Buyruqni matn ko'rinishida yozishingiz mumkin."
-        }
-    }
-
-    val processCommand: (String) -> Unit = { rawCmd ->
-        if (rawCmd.isNotBlank()) {
-            coroutineScope.launch {
-                isProcessing = true
-                voiceManager.setProcessingState()
-                lastResponseText = "Jarvis buyruqni tahlil qilmoqda..."
-
-                val parsed = JarvisAiService.processUserVoiceCommand(rawCmd, tasksSummary)
-                lastParsedResponse = parsed
-                lastResponseText = parsed.responseMessage
-
-                // Execute Parsed Action on TaskViewModel
-                executeJarvisAction(parsed, viewModel, allTasks)
-
-                isProcessing = false
-                voiceManager.speak(parsed.responseMessage)
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        voiceManager.onCommandRecognized = { text ->
-            typedCommand = text
-            processCommand(text)
-        }
-        voiceManager.speak("Assalomu alaykum! Men Jarvisman, sizni eshitmoqdaman. Qanday vazifani bajaraylik?")
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            voiceManager.destroy()
-        }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = {
-            voiceManager.stopSpeaking()
-            onDismiss()
-        },
-        sheetState = sheetState,
-        containerColor = Color(0xFF0F172A),
-        contentColor = Color.White
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
-                .testTag("dialog_jarvis"),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "JARVIS AI Voice Assistant",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(24.dp).testTag("dialog_jarvis"),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("JARVIS", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
+                    Text("Sizning shaxsiy reja yordamchingiz", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = {
-                    voiceManager.stopSpeaking()
-                    onDismiss()
-                }) {
-                    Icon(Icons.Default.Close, contentDescription = "Yopish", tint = Color.Gray)
+                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Yopish") }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                JarvisGlowingOrb(if(status.busy) VoiceState.Processing else if(status.listening) VoiceState.Listening else VoiceState.Idle)
+                Column(Modifier.weight(1f)) {
+                    Text(if(status.busy) "Bajarilmoqda" else if(status.active) "Buyruqqa tayyor" else "Kutish rejimi", style = MaterialTheme.typography.titleLarge)
+                    Text(if(status.listening) "Mikrofon yoqilgan" else "Matn orqali boshqarish", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Animated Jarvis Glowing Orb
-            JarvisGlowingOrb(voiceState = voiceState)
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Status Indicator
-            val statusText = when (voiceState) {
-                is VoiceState.Listening -> "🎙️ Sizni eshitmoqdaman..."
-                is VoiceState.Processing -> "⚡ Tahlil qilinmoqda..."
-                is VoiceState.Speaking -> "🔊 Javob berilmoqda..."
-                is VoiceState.Error -> (voiceState as VoiceState.Error).errorMessage
-                else -> "Ovozli tugmani bosing yoki yozing"
-            }
-            Text(
-                text = statusText,
-                fontSize = 13.sp,
-                color = Color(0xFF38BDF8),
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Last User Input Text Display
-            if (recognizedText.isNotBlank() || typedCommand.isNotBlank()) {
-                val userTextToShow = recognizedText.ifBlank { typedCommand }
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "💬 \"$userTextToShow\"",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFFCBD5E1),
-                        modifier = Modifier.padding(12.dp)
-                    )
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(24.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if(status.heard.isNotBlank()) Text("Siz: ${status.heard}", style = MaterialTheme.typography.labelLarge)
+                    Text(status.message, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("jarvis_response"))
                 }
-                Spacer(modifier = Modifier.height(10.dp))
             }
-
-            // Jarvis AI Response Bubble
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SmartToy,
-                        contentDescription = null,
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = lastResponseText,
-                            fontSize = 14.sp,
-                            color = Color.White,
-                            lineHeight = 20.sp
-                        )
-
-                        // Action Result Badge
-                        lastParsedResponse?.let { parsed ->
-                            if (parsed.action != JarvisActionType.GENERAL_RESPONSE) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = null,
-                                        tint = Color(0xFF4ADE80),
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Bajarildi: ${parsed.action.name}",
-                                        fontSize = 11.sp,
-                                        color = Color(0xFF4ADE80),
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
+            OutlinedTextField(value = input, onValueChange = { input = it }, label = { Text("Jarvisga buyruq") },
+                placeholder = { Text("Ertaga 09:00 da majlis qo'sh") }, shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth().testTag("jarvis_input"), maxLines = 3,
+                trailingIcon = { IconButton(enabled = input.isNotBlank() && !status.busy,
+                    onClick = { runtime.submit(input); input = "" }) { Icon(Icons.Default.Send, "Yuborish") } })
+            Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Fon rejimida tinglash", fontWeight = FontWeight.SemiBold)
+                            Text("Jarvis boshla · Jarvis tugat", style = MaterialTheme.typography.bodySmall)
                         }
+                        Switch(checked = status.listening, onCheckedChange = { enabled ->
+                            if(!enabled) JarvisListeningService.stop(context)
+                            else permissions.launch(if(Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS) else arrayOf(Manifest.permission.RECORD_AUDIO))
+                        }, modifier = Modifier.testTag("jarvis_background_switch"))
                     }
+                    Text("Ilovadan chiqishda bildirishnoma orqali ishlaydi. «Jarvis tugat» kutishga qaytaradi; ushbu tugma mikrofonni to'liq o'chiradi. Ovoz tanish qurilma, til va internetga bog'liq; batareya sarflanadi.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Quick Prompt Suggestions
-            Text(
-                text = "Namuna ovozli buyruqlar:",
-                fontSize = 12.sp,
-                color = Color.Gray,
-                modifier = Modifier.align(Alignment.Start)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                val prompts = listOf(
-                    "Bugun 18:00 da kitob o'qish",
-                    "Ertaga 09:00 da majlis qo'sh",
-                    "Bugungi vazifalarimni ko'rsat",
-                    "Dars qilish bajarildi"
-                )
-                prompts.forEach { prompt ->
-                    SuggestionChip(
-                        onClick = {
-                            typedCommand = prompt
-                            processCommand(prompt)
-                        },
-                        label = { Text(prompt, fontSize = 11.sp, color = Color(0xFFBAE6FD)) }
-                    )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                JarvisCommands.examples.forEach { command ->
+                    SuggestionChip(onClick = { input = command }, label = { Text(command) })
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Voice Mic Button & Text Command Input Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Mic Button
-                val isListening = voiceState is VoiceState.Listening
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isListening) Color(0xFFEF4444) else Color(0xFF0284C7)
-                        )
-                        .clickable {
-                            if (isListening) {
-                                voiceManager.stopListening()
-                            } else {
-                                if (ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.RECORD_AUDIO
-                                    ) == PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    voiceManager.startListening()
-                                } else {
-                                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            }
-                        }
-                        .testTag("btn_jarvis_mic"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
-                        contentDescription = "Ovozli buyruq",
-                        tint = Color.White
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                // Text Input Field
-                OutlinedTextField(
-                    value = typedCommand,
-                    onValueChange = { typedCommand = it },
-                    placeholder = { Text("Yoki buyruqni yozing...", color = Color.Gray, fontSize = 13.sp) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color(0xFF1E293B),
-                        unfocusedContainerColor = Color(0xFF1E293B),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF0284C7),
-                        unfocusedBorderColor = Color(0xFF334155)
-                    ),
-                    trailingIcon = {
-                        IconButton(
-                            onClick = {
-                                if (typedCommand.isNotBlank()) {
-                                    processCommand(typedCommand)
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = "Yuborish",
-                                tint = if (typedCommand.isNotBlank()) Color(0xFF38BDF8) else Color.Gray
-                            )
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
+            TextButton(onClick = { showHelp = !showHelp }) { Text(if(showHelp) "Buyruqlarni yopish" else "Barcha buyruqlar") }
+            if(showHelp) Text(JarvisCommands.help, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -456,58 +147,6 @@ fun JarvisGlowingOrb(voiceState: VoiceState) {
                 tint = Color.White,
                 modifier = Modifier.size(28.dp)
             )
-        }
-    }
-}
-
-private fun executeJarvisAction(
-    response: JarvisParsedResponse,
-    viewModel: TaskViewModel,
-    allTasks: List<Task>
-) {
-    when (response.action) {
-        JarvisActionType.ADD_TASK -> {
-            viewModel.addTask(
-                title = response.title,
-                description = response.description,
-                category = response.category,
-                priority = response.priority,
-                dateString = response.dateString,
-                timeString = response.timeString,
-                durationMinutes = response.durationMinutes,
-                hasReminder = true,
-                reminderMinutesBefore = 15
-            )
-        }
-        JarvisActionType.TOGGLE_COMPLETED -> {
-            val query = response.targetTaskTitle.ifBlank { response.title }
-            val matchingTask = allTasks.find {
-                it.title.contains(query, ignoreCase = true)
-            }
-            if (matchingTask != null) {
-                viewModel.toggleTaskCompletion(matchingTask)
-            }
-        }
-        JarvisActionType.DELETE_TASK -> {
-            val query = response.targetTaskTitle.ifBlank { response.title }
-            val matchingTask = allTasks.find {
-                it.title.contains(query, ignoreCase = true)
-            }
-            if (matchingTask != null) {
-                viewModel.deleteTask(matchingTask)
-            }
-        }
-        JarvisActionType.SEARCH_TASKS -> {
-            if (response.searchQuery.isNotBlank()) {
-                viewModel.setSearchQuery(response.searchQuery)
-            }
-        }
-        JarvisActionType.READ_SCHEDULE -> {
-            // Screen / ViewModel date can be refreshed
-            viewModel.setSelectedDate(response.dateString)
-        }
-        JarvisActionType.GENERAL_RESPONSE -> {
-            // General conversation
         }
     }
 }

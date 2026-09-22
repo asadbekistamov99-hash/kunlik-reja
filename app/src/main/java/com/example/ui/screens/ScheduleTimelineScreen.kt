@@ -98,55 +98,17 @@ fun ScheduleTimelineScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag("screen_schedule_timeline"),
-        contentPadding = PaddingValues(bottom = 90.dp)
+        contentPadding = PaddingValues(bottom = 170.dp)
     ) {
-        // Hero Header Section
         item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp)
-            ) {
-                // Background image or gradient
-                Image(
-                    painter = painterResource(id = R.drawable.schedule_hero_1784959099163),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Dark overlay gradient
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = 0.3f),
-                                    Color.Black.copy(alpha = 0.7f)
-                                )
-                            )
-                        )
-                )
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.Bottom
-                ) {
-                    Text(
-                        text = getFormattedHeaderDate(selectedDate),
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = if (isToday) "Bugungi Kun Tartibi" else "Rejalashtirilgan Tartib",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+            Box(Modifier.fillMaxWidth().padding(16.dp).clip(RoundedCornerShape(28.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF142747), Color(0xFF295080), Color(0xFF147D89))))) {
+                Column(Modifier.fillMaxWidth().padding(26.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("KUNLIK REJA  /  SHAXSIY MAKON", color = Color(0xFF9EE5EA), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text(if(isToday) "Kuningizni\nmaqsad bilan boshlang." else "Har bir reja —\nbir qadam oldinga.",
+                        color = Color.White, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
+                    Text(getFormattedHeaderDate(selectedDate), color = Color(0xFFCFDCEF), fontSize = 14.sp)
+                    Text("${totalCount - completedCount} ta vazifa kutilmoqda · Jarvis yordamga tayyor", color = Color(0xFFB0EBE8), fontSize = 12.sp)
                 }
             }
         }
@@ -387,7 +349,7 @@ fun ScheduleTimelineScreen(
 
 private fun getFormattedHeaderDate(dateString: String): String {
     return try {
-        val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
         val date = inputFormat.parse(dateString) ?: return dateString
         val dayFormat = SimpleDateFormat("d-MMMM, EEEE", Locale("uz"))
         dayFormat.format(date)
@@ -399,7 +361,7 @@ private fun getFormattedHeaderDate(dateString: String): String {
 private fun getUpcomingDates(): List<Pair<String, String>> {
     val list = mutableListOf<Pair<String, String>>()
     val cal = Calendar.getInstance()
-    val sdfKey = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val sdfKey = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
 
     // Yesterday
     cal.add(Calendar.DAY_OF_YEAR, -1)

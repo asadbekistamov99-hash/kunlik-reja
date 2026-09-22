@@ -58,9 +58,11 @@ fun TaskListScreen(
     modifier: Modifier = Modifier
 ) {
     val allTasks by viewModel.allTasks.collectAsStateWithLifecycle()
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: All, 1: Pending, 2: Completed
-    var activeCategoryFilter by remember { mutableStateOf<String?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
+    val statusFilter by viewModel.statusFilter.collectAsStateWithLifecycle()
+    val selectedTab = when(statusFilter) { "PENDING" -> 1; "COMPLETED" -> 2; else -> 0 }
+    val activeCategoryFilter by viewModel.selectedCategory.collectAsStateWithLifecycle()
+    val priorityFilter by viewModel.selectedPriority.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
 
     val filteredTasks = allTasks.filter { task ->
         val matchesTab = when (selectedTab) {
@@ -74,7 +76,7 @@ fun TaskListScreen(
                 task.description.contains(searchQuery, ignoreCase = true) ||
                 task.dateString.contains(searchQuery)
 
-        matchesTab && matchesCat && matchesSearch
+        matchesTab && matchesCat && matchesSearch && (priorityFilter == null || task.priority == priorityFilter)
     }.sortedBy { it.timestampMillis }
 
     Column(
@@ -110,12 +112,12 @@ fun TaskListScreen(
                 // Search Bar inside Header
                 OutlinedTextField(
                     value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    onValueChange = { viewModel.setSearchQuery(it) },
                     placeholder = { Text("Qidirish (sarlavha, sana)...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
+                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
                                 Icon(Icons.Default.Clear, contentDescription = null)
                             }
                         }
@@ -135,19 +137,19 @@ fun TaskListScreen(
         TabRow(selectedTabIndex = selectedTab) {
             Tab(
                 selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
+                onClick = { viewModel.setStatusFilter("ALL") },
                 text = { Text("Barchasi (${allTasks.size})") },
                 modifier = Modifier.testTag("tab_all")
             )
             Tab(
                 selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
+                onClick = { viewModel.setStatusFilter("PENDING") },
                 text = { Text("Bajarilmagan (${allTasks.count { !it.isCompleted }})") },
                 modifier = Modifier.testTag("tab_pending")
             )
             Tab(
                 selected = selectedTab == 2,
-                onClick = { selectedTab = 2 },
+                onClick = { viewModel.setStatusFilter("COMPLETED") },
                 text = { Text("Bajarilgan (${allTasks.count { it.isCompleted }})") },
                 modifier = Modifier.testTag("tab_completed")
             )
@@ -163,7 +165,7 @@ fun TaskListScreen(
             item {
                 FilterChip(
                     selected = activeCategoryFilter == null,
-                    onClick = { activeCategoryFilter = null },
+                    onClick = { viewModel.setSelectedCategory(null) },
                     label = { Text("Barcha kategoriyalar") }
                 )
             }
@@ -173,7 +175,7 @@ fun TaskListScreen(
                 FilterChip(
                     selected = isSelected,
                     onClick = {
-                        activeCategoryFilter = if (isSelected) null else category.name
+                        viewModel.setSelectedCategory(if (isSelected) null else category.name)
                     },
                     label = { Text(catLabel) },
                     leadingIcon = { Icon(catIcon, contentDescription = null, modifier = Modifier.size(14.dp)) },
