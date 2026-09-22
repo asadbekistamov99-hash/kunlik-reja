@@ -29,7 +29,7 @@ jobs:
         run: chmod +x gradlew && ./gradlew :app:assembleDebug --stacktrace
       - name: Unit and UI tests
         timeout-minutes: 8
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        run: ./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true --stacktrace
       - name: Android lint
         run: ./gradlew :app:lintDebug --stacktrace
       - uses: actions/upload-artifact@v4
