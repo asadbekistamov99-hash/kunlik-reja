@@ -22,6 +22,14 @@ The first release as Jarvis Ultra. The "Kun Tartibi" planner becomes a full voic
 - **Release engineering**: R8 minification and resource shrinking, ProGuard rules for native libraries, signed APK + AAB workflow, GitHub Release automation, CI with an emulator matrix for Android 12–15.
 - **Tests**: JVM unit tests, Robolectric integration tests (SDK 31/33/34/35), Compose UI tests with screenshots, instrumented device tests.
 
+### Verified
+- CI: debug and R8 release builds, lint (0 errors), JVM + Robolectric suites (SDK 31/33/34/35) and Compose UI tests all pass.
+- Instrumented suite passes on Android 12 (API 31), 13 (33), 14 (34) and 15 (35) emulators. It covers the encrypted database, all screens, a typed command through the engine, no-internet mode, the foreground service on a locked screen, the battery-saver pause and the reboot recovery path.
+
+### Known limitations
+- The Vosk and JNA native libraries are not yet 16 KB page-aligned upstream. Offline Vosk recognition may fail on 16 KB-page devices; Google and Whisper speech-to-text are unaffected.
+- The bundled openWakeWord model detects "Hey Jarvis". For the single word "Jarvis", configure a Picovoice AccessKey.
+
 ### Changed
 - The app name is now **Jarvis Ultra**. Minimum SDK is 26 and the target is 36.
 - Reminders now use the alarm channel sound only (no double ringtone) and have a **Bajarildi** (done) action.
