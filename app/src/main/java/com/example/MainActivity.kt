@@ -1,281 +1,215 @@
 package com.example
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
+import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
+import android.os.SystemClock
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.ui.Alignment
-import com.example.jarvis.JarvisDialog
-import com.example.jarvis.JarvisFloatingButton
-import com.example.ui.components.TaskActionDialog
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ListAlt
-import androidx.compose.material.icons.filled.PieChart
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Button
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModelProvider
-import com.example.data.AppDatabase
-import com.example.data.Task
-import com.example.notification.NotificationHelper
-import com.example.repository.TaskRepository
-import com.example.ui.components.AddTaskBottomSheet
-import com.example.ui.screens.ScheduleTimelineScreen
-import com.example.ui.screens.StatsAndNotificationsScreen
-import com.example.ui.screens.TaskListScreen
-import com.example.ui.theme.KunTartibiTheme
+import androidx.lifecycle.lifecycleScope
+import com.example.jarvis.AppContainer
+import com.example.jarvis.security.BiometricGate
+import com.example.jarvis.security.JarvisCapability
+import com.example.jarvis.settings.JarvisSettings
+import com.example.ui.components.HologramBackground
+import com.example.ui.components.JarvisOrb
+import com.example.ui.navigation.HostActions
+import com.example.ui.navigation.JarvisApp
+import com.example.ui.navigation.LocalHostActions
+import com.example.ui.theme.JarvisTheme
+import com.example.ui.viewmodel.JarvisViewModel
 import com.example.ui.viewmodel.TaskViewModel
 import com.example.ui.viewmodel.TaskViewModelFactory
+import com.example.jarvis.voice.AssistantStatus
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity(), HostActions {
 
-    private lateinit var viewModel: TaskViewModel
+    private lateinit var container: AppContainer
+    private lateinit var jarvis: JarvisViewModel
+    private lateinit var tasks: TaskViewModel
 
-    @OptIn(ExperimentalMaterial3Api::class)
+    private var ready by mutableStateOf(false)
+    private var locked by mutableStateOf(false)
+    private var startRoute by mutableStateOf<String?>(null)
+    private var backgroundedAt = 0L
+    private var pendingBackupPassword: CharArray? = null
+    private var enableAfterPermission = false
+
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        if (enableAfterPermission) {
+            enableAfterPermission = false
+            if (result[android.Manifest.permission.RECORD_AUDIO] == true || container.permissions.isGranted(JarvisCapability.MICROPHONE)) {
+                jarvis.setAssistantEnabled(this, true)
+                jarvis.set(JarvisSettings.ONBOARDING_DONE, true)
+            } else jarvis.message("Mikrofon ruxsati berilmadi")
+        }
+    }
+
+    private val googleAuthLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        val token = runCatching { container.googleAuth.resultFromIntent(result.data).accessToken }.getOrNull()
+        jarvis.onGoogleAuthorized(token)
+    }
+
+    private val folderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) jarvis.addFileTree(this, uri)
+    }
+
+    private val exportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val pw = pendingBackupPassword
+        pendingBackupPassword = null
+        if (uri != null && pw != null) jarvis.exportBackup(uri, pw) else pw?.fill('\u0000')
+    }
+
+    private val importLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val pw = pendingBackupPassword
+        pendingBackupPassword = null
+        if (uri != null && pw != null) jarvis.importBackup(uri, pw) else pw?.fill('\u0000')
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        container = (application as JarvisApplication).container
+        jarvis = ViewModelProvider(this, JarvisViewModel.Factory(container))[JarvisViewModel::class.java]
+        tasks = ViewModelProvider(this, TaskViewModelFactory(container.taskRepository))[TaskViewModel::class.java]
+        startRoute = intent?.getStringExtra(EXTRA_ROUTE)
 
-        // Initialize Database & Notification channel
-        val database = AppDatabase.getDatabase(applicationContext)
-        val repository = TaskRepository(database.taskDao(), database.habitDao(), applicationContext)
-        val factory = TaskViewModelFactory(repository)
-        viewModel = ViewModelProvider(this, factory)[TaskViewModel::class.java]
-
-        NotificationHelper.createNotificationChannel(applicationContext)
+        lifecycleScope.launch {
+            val s = container.settings.current()
+            locked = s.biometricLock
+            ready = true
+            if (locked) unlock()
+            jarvis.ensureServiceState(this@MainActivity)
+        }
 
         setContent {
-            KunTartibiTheme {
-                val context = LocalContext.current
-                var selectedTab by remember { mutableIntStateOf(0) } // 0: Schedule, 1: Task List, 2: Stats
-
-                var showBottomSheet by remember { mutableStateOf(false) }
-                var showJarvisDialog by remember { mutableStateOf(false) }
-                var taskToEdit by remember { mutableStateOf<Task?>(null) }
-                var selectedTaskForAction by remember { mutableStateOf<Task?>(null) }
-                val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                val jarvisSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-                // Request Notification Permission on Android 13+
-                val permissionLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission()
-                ) { isGranted ->
-                    // Notification permission result handled
-                }
-
-                LaunchedEffect(Unit) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        if (ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.POST_NOTIFICATIONS
-                            ) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    }
-                }
-
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    bottomBar = {
-                        NavigationBar(
-                            modifier = Modifier
-                                .testTag("nav_bar")
-                                .windowInsetsPadding(WindowInsets.navigationBars),
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 8.dp
-                        ) {
-                            NavigationBarItem(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
-                                icon = { Icon(Icons.Default.Schedule, contentDescription = "Kun Tartibi") },
-                                label = { Text("Kun Tartibi", fontSize = 12.sp, fontWeight = FontWeight.Medium) },
-                                modifier = Modifier.testTag("nav_item_schedule")
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
-                                icon = { Icon(Icons.Default.ListAlt, contentDescription = "Ro'yxat") },
-                                label = { Text("Ro'yxat", fontSize = 12.sp, fontWeight = FontWeight.Medium) },
-                                modifier = Modifier.testTag("nav_item_list")
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 2,
-                                onClick = { selectedTab = 2 },
-                                icon = { Icon(Icons.Default.PieChart, contentDescription = "Statistika") },
-                                label = { Text("Statistika", fontSize = 12.sp, fontWeight = FontWeight.Medium) },
-                                modifier = Modifier.testTag("nav_item_stats")
-                            )
-                        }
-                    },
-                    floatingActionButton = {
-                        Column(
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            JarvisFloatingButton(
-                                onClick = { showJarvisDialog = true }
-                            )
-
-                            if (selectedTab != 2) {
-                                ExtendedFloatingActionButton(
-                                    onClick = {
-                                        taskToEdit = null
-                                        showBottomSheet = true
-                                    },
-                                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                                    text = { Text("Yangi vazifa", fontWeight = FontWeight.Bold) },
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.testTag("fab_add_task")
-                                )
-                            }
-                        }
-                    }
-                ) { innerPadding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
-                        when (selectedTab) {
-                            0 -> ScheduleTimelineScreen(
-                                viewModel = viewModel,
-                                onAddNewTask = {
-                                    taskToEdit = null
-                                    showBottomSheet = true
-                                },
-                                onEditTask = { task ->
-                                    selectedTaskForAction = task
-                                }
-                            )
-                            1 -> TaskListScreen(
-                                viewModel = viewModel,
-                                onEditTask = { task ->
-                                    selectedTaskForAction = task
-                                }
-                            )
-                            2 -> StatsAndNotificationsScreen(
-                                viewModel = viewModel
-                            )
-                        }
-                    }
-
-                    // Add/Edit Task Bottom Sheet
-                    if (showBottomSheet) {
-                        AddTaskBottomSheet(
-                            sheetState = sheetState,
-                            taskToEdit = taskToEdit,
-                            onDismiss = {
-                                showBottomSheet = false
-                                taskToEdit = null
-                            },
-                            onSaveTask = { title, desc, cat, priority, dateStr, timeStr, duration, hasReminder, reminderMins, recurringType ->
-                                if (taskToEdit == null) {
-                                    viewModel.addTask(
-                                        title = title,
-                                        description = desc,
-                                        category = cat,
-                                        priority = priority,
-                                        dateString = dateStr,
-                                        timeString = timeStr,
-                                        durationMinutes = duration,
-                                        hasReminder = hasReminder,
-                                        reminderMinutesBefore = reminderMins,
-                                        recurringType = recurringType
-                                    )
-                                } else {
-                                    val updatedTask = taskToEdit!!.copy(
-                                        title = title,
-                                        description = desc,
-                                        category = cat,
-                                        priority = priority,
-                                        dateString = dateStr,
-                                        timeString = timeStr,
-                                        durationMinutes = duration,
-                                        hasReminder = hasReminder,
-                                        reminderMinutesBefore = reminderMins
-                                    )
-                                    viewModel.updateTask(updatedTask)
-                                }
-                                showBottomSheet = false
-                                taskToEdit = null
-                            }
-                        )
-                    }
-
-                    // Task Detail / Action Dialog (Edit, Delete, Toggle Complete)
-                    selectedTaskForAction?.let { task ->
-                        TaskActionDialog(
-                            task = task,
-                            onDismiss = { selectedTaskForAction = null },
-                            onEdit = { taskToEditItem ->
-                                selectedTaskForAction = null
-                                taskToEdit = taskToEditItem
-                                showBottomSheet = true
-                            },
-                            onDelete = { taskToDelete ->
-                                viewModel.deleteTask(taskToDelete)
-                            },
-                            onToggleComplete = { taskToToggle ->
-                                viewModel.toggleTaskCompletion(taskToToggle)
-                            }
-                        )
-                    }
-
-                    // Jarvis AI Assistant Voice Dialog
-                    if (showJarvisDialog) {
-                        JarvisDialog(
-                            sheetState = jarvisSheetState,
-                            viewModel = viewModel,
-                            onDismiss = { showJarvisDialog = false }
-                        )
+            JarvisTheme {
+                CompositionLocalProvider(LocalHostActions provides this) {
+                    when {
+                        !ready -> HologramBackground { }
+                        locked -> LockScreen()
+                        else -> JarvisApp(jarvis, tasks, startRoute)
                     }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(EXTRA_ROUTE)?.let { startRoute = it }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        backgroundedAt = SystemClock.elapsedRealtime()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (ready && container.settings.state.value.biometricLock && backgroundedAt > 0 &&
+            SystemClock.elapsedRealtime() - backgroundedAt > RELOCK_AFTER_MS
+        ) {
+            locked = true
+            unlock()
+        }
+    }
+
+    private fun unlock() {
+        BiometricGate(this).authenticate(
+            onSuccess = { locked = false },
+            onFailure = { jarvis.message(it) }
+        )
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun LockScreen() {
+        HologramBackground {
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                JarvisOrb(AssistantStatus.PAUSED, 0f, size = 160.dp)
+                Spacer(Modifier.height(24.dp))
+                Text("Jarvis Ultra qulflangan")
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = { unlock() }, modifier = Modifier.testTag("button_unlock")) { Text("Qulfni ochish") }
+            }
+        }
+    }
+
+    // ---- HostActions ----
+
+    override fun requestCapability(capability: JarvisCapability) {
+        val perms = container.permissions.runtimePermissions(capability)
+        if (perms.isNotEmpty()) permissionLauncher.launch(perms)
+        else container.permissions.settingsIntent(capability)?.let { runCatching { startActivity(it) } }
+    }
+
+    override fun enableAssistant() {
+        val needed = buildList {
+            addAll(container.permissions.runtimePermissions(JarvisCapability.MICROPHONE))
+            addAll(container.permissions.runtimePermissions(JarvisCapability.NOTIFICATIONS))
+        }.filterNot { container.permissions.has(it) }
+        if (needed.isEmpty()) {
+            jarvis.setAssistantEnabled(this, true)
+            jarvis.set(JarvisSettings.ONBOARDING_DONE, true)
+        } else {
+            enableAfterPermission = true
+            permissionLauncher.launch(needed.toTypedArray())
+        }
+    }
+
+    override fun connectGoogle() {
+        lifecycleScope.launch {
+            runCatching { container.googleAuth.authorize() }
+                .onSuccess { result ->
+                    val pending = result.pendingIntent
+                    if (result.hasResolution() && pending != null) {
+                        googleAuthLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
+                    } else jarvis.onGoogleAuthorized(result.accessToken)
+                }
+                .onFailure { jarvis.message("Google bilan ulanib bo'lmadi: ${it.message}") }
+        }
+    }
+
+    override fun pickFolder() = folderLauncher.launch(null)
+
+    override fun exportBackup(password: CharArray) {
+        pendingBackupPassword = password
+        exportLauncher.launch("jarvis-backup-${SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())}.jrvs")
+    }
+
+    override fun importBackup(password: CharArray) {
+        pendingBackupPassword = password
+        importLauncher.launch(arrayOf("*/*"))
+    }
+
+    override fun openAppSettings() {
+        runCatching { startActivity(container.permissions.appDetailsIntent()) }
+    }
+
+    companion object {
+        const val EXTRA_ROUTE = "route"
+        private const val RELOCK_AFTER_MS = 60_000L
     }
 }

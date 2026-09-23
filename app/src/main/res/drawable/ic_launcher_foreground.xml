@@ -1,8 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/task_planner_icon_1784959081255"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- outer holographic ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF3FE0FF"
+        android:strokeWidth="2.5"
+        android:pathData="M54,30A24,24 0 1,1 53.99,30Z" />
+    <!-- inner ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#992D8CFF"
+        android:strokeWidth="1.5"
+        android:pathData="M54,37A17,17 0 1,1 53.99,37Z" />
+    <!-- reactor core -->
+    <path android:fillColor="#FF3FE0FF" android:pathData="M54,45A9,9 0 1,0 54,63A9,9 0 1,0 54,45Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,49A5,5 0 1,0 54,59A5,5 0 1,0 54,49Z" />
+</vector>

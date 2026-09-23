@@ -82,12 +82,6 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         initialValue = emptyList()
     )
 
-    init {
-        viewModelScope.launch {
-            repository.initializeDefaultTasksIfEmpty()
-        }
-    }
-
     fun setSelectedDate(dateString: String) {
         _selectedDate.value = dateString
     }
@@ -216,13 +210,15 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         NotificationHelper.playAlarmSound(context, 4000L)
     }
 
-    private fun parseTimeToMillis(dateStr: String, timeStr: String): Long {
-        return try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            val date = sdf.parse("$dateStr $timeStr")
-            date?.time ?: System.currentTimeMillis()
-        } catch (e: Exception) {
-            System.currentTimeMillis()
+    private fun parseTimeToMillis(dateStr: String, timeStr: String): Long = toMillis(dateStr, timeStr)
+
+    companion object {
+        fun toMillis(dateStr: String, timeStr: String): Long {
+            return try {
+                SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).parse("$dateStr $timeStr")?.time ?: System.currentTimeMillis()
+            } catch (e: Exception) {
+                System.currentTimeMillis()
+            }
         }
     }
 }
