@@ -69,7 +69,9 @@ class JarvisDeviceTest {
     @After fun cleanUp() {
         JarvisServiceController.stop(context)
         shell("cmd power set-mode 0")
+        shell("settings put global low_power 0")
         shell("cmd battery reset")
+        shell("dumpsys battery reset")
         shell("svc wifi enable")
         shell("svc data enable")
         shell("input keyevent KEYCODE_WAKEUP")
@@ -116,14 +118,16 @@ class JarvisDeviceTest {
         assertTrue(add.text, add.success)
     }
 
-    @Test fun foregroundServiceSurvivesLockAndPausesForBatterySaver() {
+    private fun startService() {
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("screen_dashboard").fetchSemanticsNodes().isNotEmpty() }
         assertTrue(JarvisServiceController.start(context))
         assertTrue("service running", waitFor { JarvisForegroundService.isRunning })
         val nm = context.getSystemService(NotificationManager::class.java)
         assertTrue("persistent notification", waitFor { nm.activeNotifications.any { it.id == JarvisForegroundService.NOTIFICATION_ID } })
+    }
 
-        // Locked screen: keeps listening by default.
+    @Test fun foregroundServiceKeepsRunningOnLockedScreen() {
+        startService()
         shell("input keyevent KEYCODE_SLEEP")
         Thread.sleep(1500)
         assertTrue(JarvisForegroundService.isRunning)
@@ -134,16 +138,23 @@ class JarvisDeviceTest {
         shell("input keyevent KEYCODE_WAKEUP")
         runBlocking { container.settings.set(JarvisSettings.LISTEN_WHEN_LOCKED, true) }
         assertTrue(waitFor { container.voice.state.value.status != AssistantStatus.PAUSED })
+        assertTrue(JarvisForegroundService.isRunning)
+    }
 
-        // Battery saver.
+    @Test fun foregroundServicePausesInBatterySaver() {
+        startService()
         runBlocking { container.settings.set(JarvisSettings.PAUSE_IN_BATTERY_SAVER, true) }
+        shell("dumpsys battery unplug")
         shell("cmd battery unplug")
         shell("cmd power set-mode 1")
         val pm = context.getSystemService(PowerManager::class.java)
+        if (!waitFor(3_000) { pm.isPowerSaveMode }) shell("settings put global low_power 1")
         assumeTrue("emulator refused battery saver", waitFor(5_000) { pm.isPowerSaveMode })
         assertTrue("paused in battery saver", waitFor { container.voice.state.value.status == AssistantStatus.PAUSED })
         shell("cmd power set-mode 0")
+        shell("settings put global low_power 0")
         assertTrue(waitFor { container.voice.state.value.status != AssistantStatus.PAUSED })
+        assertTrue(JarvisForegroundService.isRunning)
     }
 
     @Test fun rebootRecoveryPath() {
