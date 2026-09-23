@@ -226,9 +226,8 @@ class JarvisForegroundService : LifecycleService(), WakeController {
 
     private fun updateNotification() {
         if (!isRunning) return
-        runCatching {
-            androidx.core.app.NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification())
-        }
+        // Updating our own foreground-service notification; POST_NOTIFICATIONS only affects visibility.
+        getSystemService(android.app.NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun buildNotification(): Notification {
