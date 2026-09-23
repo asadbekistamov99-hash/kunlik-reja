@@ -25,13 +25,14 @@ class LongTermMemory(private val dao: MemoryDao) {
     }
 
     suspend fun recall(query: String?, limit: Int = 8): List<MemoryEntry> {
-        val results = if (query.isNullOrBlank()) dao.getAll().take(limit)
+        val command = MemoryType.COMMAND.name
+        val results = if (query.isNullOrBlank()) dao.getAll().filter { it.type != command }.take(limit)
         else {
             val words = query.lowercase(Locale.ROOT).split(' ').filter { it.length >= 3 }
             val hits = LinkedHashMap<Long, MemoryEntry>()
-            dao.search(query, limit).forEach { hits[it.id] = it }
-            words.forEach { w -> dao.search(w, limit).forEach { hits[it.id] = it } }
-            hits.values.take(limit)
+            dao.search(query, limit * 2).forEach { hits[it.id] = it }
+            words.forEach { w -> dao.search(w, limit * 2).forEach { hits[it.id] = it } }
+            hits.values.filter { it.type != command }.take(limit)
         }
         if (results.isNotEmpty()) dao.markAccessed(results.map { it.id })
         return results

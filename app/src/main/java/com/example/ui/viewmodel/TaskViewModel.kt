@@ -54,26 +54,27 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
             initialValue = emptyList()
         )
 
-    val tasksForSelectedDate: StateFlow<List<Task>> = combine(
-        allTasks,
+    private val filters = combine(
         _selectedDate,
         _selectedCategory,
         _selectedPriority,
         _statusFilter,
         _searchQuery
-    ) { tasks, date, category, priority, status, query ->
+    ) { date, category, priority, status, query -> TaskFilters(date, category, priority, status, query) }
+
+    val tasksForSelectedDate: StateFlow<List<Task>> = combine(allTasks, filters) { tasks, f ->
         tasks.filter { task ->
-            val matchesDate = task.dateString == date
-            val matchesCategory = category == null || task.category == category
-            val matchesPriority = priority == null || task.priority == priority
-            val matchesStatus = when (status) {
+            val matchesDate = task.dateString == f.date
+            val matchesCategory = f.category == null || task.category == f.category
+            val matchesPriority = f.priority == null || task.priority == f.priority
+            val matchesStatus = when (f.status) {
                 "COMPLETED" -> task.isCompleted
                 "PENDING" -> !task.isCompleted
                 else -> true
             }
-            val matchesSearch = query.isEmpty() ||
-                    task.title.contains(query, ignoreCase = true) ||
-                    task.description.contains(query, ignoreCase = true)
+            val matchesSearch = f.query.isEmpty() ||
+                    task.title.contains(f.query, ignoreCase = true) ||
+                    task.description.contains(f.query, ignoreCase = true)
             matchesDate && matchesCategory && matchesPriority && matchesStatus && matchesSearch
         }.sortedBy { it.timestampMillis }
     }.stateIn(
@@ -222,6 +223,14 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         }
     }
 }
+
+private data class TaskFilters(
+    val date: String,
+    val category: String?,
+    val priority: String?,
+    val status: String,
+    val query: String
+)
 
 class TaskViewModelFactory(private val repository: TaskRepository) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {

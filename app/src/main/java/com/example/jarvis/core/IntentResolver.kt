@@ -90,7 +90,8 @@ class IntentResolver {
             return hit(IntentType.FORGET, 0.85f, ResolvedIntent.QUERY to strip(cmd.remainder, FORGET_RE, FILLER_RE))
         }
         if (RECALL_RE.containsMatchIn(t)) {
-            return hit(IntentType.RECALL, 0.9f, ResolvedIntent.QUERY to strip(cmd.remainder, RECALL_RE, FILLER_RE, QUESTION_RE))
+            val about = if (Regex("""\bism""").containsMatchIn(t)) "ism" else strip(cmd.remainder, RECALL_RE, FILLER_RE, QUESTION_RE)
+            return hit(IntentType.RECALL, 0.9f, ResolvedIntent.QUERY to about)
         }
         if (REMEMBER_EXPLICIT_RE.containsMatchIn(t) || PERSONAL_FACT_RE.containsMatchIn(t)) {
             val content = strip(cmd.body, REMEMBER_EXPLICIT_RE, Regex("""\b(?:ki|shuni)\b"""))

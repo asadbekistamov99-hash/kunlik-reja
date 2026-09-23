@@ -77,6 +77,7 @@ android {
   lint {
     abortOnError = true
     checkReleaseBuilds = false
+    textReport = true
     warningsAsErrors = false
     // Wake-word models are large binary assets by design.
     disable += listOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion", "OldTargetApi")
