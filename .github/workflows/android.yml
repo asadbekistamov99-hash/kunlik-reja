@@ -33,11 +33,20 @@ jobs:
       - name: Install SDK platform
         run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
       - name: Build debug + release (R8)
-        run: ./gradlew :app:assembleDebug :app:assembleRelease :app:bundleRelease --stacktrace
+        run: ./gradlew :app:assembleDebug :app:assembleRelease :app:bundleRelease 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
       - name: Unit, integration and Robolectric UI tests
-        run: ./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true --stacktrace
+        run: ./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true 2>&1 | tee test.log; exit ${PIPESTATUS[0]}
       - name: Android lint
-        run: ./gradlew :app:lintDebug --stacktrace
+        run: ./gradlew :app:lintDebug 2>&1 | tee lint.log; exit ${PIPESTATUS[0]}
+      - name: Failure summary
+        if: failure()
+        run: |
+          for f in build.log test.log lint.log; do
+            [ -f "$f" ] || continue
+            echo "===== $f ====="
+            grep -E "^e: |^w: .*(deprecated|unused)? *$|FAILED|Error:|error:|Exception|expected:|at com\.example" "$f" | grep -v "^w: " | head -150
+          done
+          find app/build/reports/lint-results-debug.txt -exec cat {} \; 2>/dev/null | head -100 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
