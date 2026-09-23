@@ -2,34 +2,53 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary Indigo & Slate Palette
-val IndigoPrimary = Color(0xFF283593)
-val IndigoSecondary = Color(0xFF3F51B5)
-val IndigoLight = Color(0xFF7986CB)
-val IndigoContainer = Color(0xFFE8EAF6)
+// Jarvis dark titanium palette
+val Titanium950 = Color(0xFF07090D)
+val Titanium900 = Color(0xFF0C1016)
+val Titanium850 = Color(0xFF111722)
+val Titanium800 = Color(0xFF18202C)
+val Titanium700 = Color(0xFF243041)
+val Titanium500 = Color(0xFF5B6B80)
+val Titanium300 = Color(0xFFA9B6C6)
+val Titanium100 = Color(0xFFE3E9F1)
 
-val AmberAccent = Color(0xFFFFB300)
-val SurfaceBackground = Color(0xFFF7F9FC)
-val SurfaceCard = Color(0xFFFFFFFF)
+val ArcCyan = Color(0xFF3FE0FF)
+val ArcBlue = Color(0xFF2D8CFF)
+val ArcDeep = Color(0xFF0B4F8C)
+val HoloViolet = Color(0xFF8B7CFF)
+val ReactorGold = Color(0xFFFFC94A)
+val SignalGreen = Color(0xFF3DDC97)
+val AlertRed = Color(0xFFFF5C6C)
 
-// Priority Colors
-val PriorityHigh = Color(0xFFE53935)
-val PriorityHighContainer = Color(0xFFFFEBEE)
-val PriorityMedium = Color(0xFFFB8C00)
-val PriorityMediumContainer = Color(0xFFFFF3E0)
-val PriorityLow = Color(0xFF43A047)
-val PriorityLowContainer = Color(0xFFE8F5E9)
+val GlassFill = Color(0x1AFFFFFF)
+val GlassStroke = Color(0x33A9E8FF)
 
-// Category Colors
-val CategoryWork = Color(0xFF1E88E5)
-val CategoryStudy = Color(0xFF8E24AA)
-val CategoryPersonal = Color(0xFF00ACC1)
-val CategoryHealth = Color(0xFF43A047)
-val CategoryHome = Color(0xFFF4511E)
-val CategoryOther = Color(0xFF757575)
+// Kept for the existing planner components
+val IndigoPrimary = ArcBlue
+val IndigoSecondary = ArcCyan
+val IndigoLight = Color(0xFF7FB8FF)
+val IndigoContainer = Titanium800
+val AmberAccent = ReactorGold
+val SurfaceBackground = Titanium900
+val SurfaceCard = Titanium850
 
-// Dark Palette
-val IndigoPrimaryDark = Color(0xFF9FA8DA)
-val IndigoSecondaryDark = Color(0xFFC5CAE9)
-val SurfaceBackgroundDark = Color(0xFF12131A)
-val SurfaceCardDark = Color(0xFF1E1F2A)
+// Priority colors (tuned for dark surfaces)
+val PriorityHigh = Color(0xFFFF6B7A)
+val PriorityHighContainer = Color(0x33FF6B7A)
+val PriorityMedium = Color(0xFFFFB35C)
+val PriorityMediumContainer = Color(0x33FFB35C)
+val PriorityLow = Color(0xFF4FDDA0)
+val PriorityLowContainer = Color(0x334FDDA0)
+
+// Category colors
+val CategoryWork = Color(0xFF4DA3FF)
+val CategoryStudy = Color(0xFFB083FF)
+val CategoryPersonal = Color(0xFF3FE0FF)
+val CategoryHealth = Color(0xFF4FDDA0)
+val CategoryHome = Color(0xFFFF8A5C)
+val CategoryOther = Color(0xFF9AA7B8)
+
+val IndigoPrimaryDark = ArcCyan
+val IndigoSecondaryDark = ArcBlue
+val SurfaceBackgroundDark = Titanium900
+val SurfaceCardDark = Titanium850

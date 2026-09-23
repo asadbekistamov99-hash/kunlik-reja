@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Kun Tartibi"
+rootProject.name = "Jarvis Ultra"
 
 include(":app")
