@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    # Release commits on a working branch ("[release] ..." in the message) also publish;
+    # the action creates the tag itself.
+    branches: ["claude/**"]
   workflow_dispatch:
     inputs:
       tag:
@@ -15,12 +18,18 @@ permissions:
 
 jobs:
   release:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      REQUESTED_TAG: ${{ github.event.inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve release tag
+        run: |
+          TAG="$REQUESTED_TAG"
+          [ -n "$TAG" ] || TAG="v$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)"
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
