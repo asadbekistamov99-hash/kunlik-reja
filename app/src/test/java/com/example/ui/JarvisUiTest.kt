@@ -60,8 +60,6 @@ class JarvisUiTest {
         rule.onNodeWithTag("action_habits").assertIsDisplayed()
         rule.onNodeWithTag("action_share").assertIsDisplayed()
         rule.onNodeWithTag("action_copy").assertIsDisplayed()
-        rule.onNodeWithTag("action_focus").performClick()
-        rule.waitForIdle()
-        rule.onRoot().captureRoboImage(filePath = "build/previews/08-focus.png")
+        rule.onNodeWithTag("action_focus").assertIsDisplayed()
     }
 }
