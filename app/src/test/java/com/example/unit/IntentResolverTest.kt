@@ -1,9 +1,9 @@
 package com.example.unit
 
-import com.example.jarvis.core.CommandParser
-import com.example.jarvis.core.IntentResolver
-import com.example.jarvis.core.IntentType
-import com.example.jarvis.core.ResolvedIntent
+import com.jarvis.core.CommandParser
+import com.jarvis.core.IntentResolver
+import com.jarvis.core.IntentType
+import com.jarvis.core.ResolvedIntent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

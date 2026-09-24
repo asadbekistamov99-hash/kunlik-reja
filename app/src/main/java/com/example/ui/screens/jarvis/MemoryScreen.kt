@@ -50,7 +50,7 @@ import java.util.Locale
 
 private val TYPE_LABELS = mapOf(
     MemoryType.PROFILE.name to "Profil", MemoryType.HABIT.name to "Odatlar", MemoryType.PREFERENCE.name to "Afzalliklar",
-    MemoryType.IMPORTANT.name to "Muhim", MemoryType.FACT.name to "Faktlar"
+    MemoryType.IMPORTANT.name to "Muhim", MemoryType.PATTERN.name to "Ish odatlari (o'rganilgan)", MemoryType.FACT.name to "Faktlar"
 )
 
 @Composable

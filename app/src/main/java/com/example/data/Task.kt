@@ -1,5 +1,6 @@
 package com.example.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -37,7 +38,13 @@ data class Task(
     val recurringType: String = "NONE", // "NONE", "DAILY_7", "DAILY_14", "DAILY_30", "WEEKLY_4", "MONTHLY_3"
     val subtasksJson: String = "", // Format: "Title 1|1,Title 2|0"
     val voiceNoteText: String = "",
-    val createdTimestamp: Long = System.currentTimeMillis()
+    val createdTimestamp: Long = System.currentTimeMillis(),
+    /** Optional due date (YYYY-MM-DD); empty when the task has no deadline. */
+    @ColumnInfo(defaultValue = "''")
+    val deadline: String = "",
+    /** When the task was marked done (epoch millis), 0 while pending. Feeds work-pattern analysis. */
+    @ColumnInfo(defaultValue = "0")
+    val completedAt: Long = 0
 )
 
 data class SubtaskItem(

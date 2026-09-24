@@ -36,8 +36,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.jarvis.automation.HabitEngine
-import com.example.jarvis.core.ActionExecutor
+import com.jarvis.automation.HabitEngine
+import com.jarvis.core.ActionExecutor
 import com.example.repository.TaskRepository
 import com.example.ui.components.GlassCard
 import com.example.ui.components.JarvisOrb

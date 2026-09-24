@@ -1,12 +1,12 @@
 package com.example.unit
 
-import com.example.jarvis.integrations.Gmail
-import com.example.jarvis.integrations.MimeMessage
-import com.example.jarvis.memory.BackupCodec
-import com.example.jarvis.memory.BackupException
-import com.example.jarvis.voice.WhisperSpeechToText
-import com.example.jarvis.wakeword.AudioListener
-import com.example.jarvis.wakeword.ShortRingBuffer
+import com.jarvis.integrations.GmailManager
+import com.jarvis.integrations.MimeMessage
+import com.jarvis.memory.BackupCodec
+import com.jarvis.memory.BackupException
+import com.jarvis.voice.WhisperSpeechToText
+import com.jarvis.wakeword.AudioListener
+import com.jarvis.wakeword.ShortRingBuffer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -57,8 +57,8 @@ class SecurityAndCodecTest {
     }
 
     @Test fun `sender display name`() {
-        assertEquals("Ali Valiyev", Gmail.displayName("\"Ali Valiyev\" <ali@example.com>"))
-        assertEquals("ali@example.com", Gmail.displayName("<ali@example.com>"))
+        assertEquals("Ali Valiyev", GmailManager.displayName("\"Ali Valiyev\" <ali@example.com>"))
+        assertEquals("ali@example.com", GmailManager.displayName("<ali@example.com>"))
     }
 
     @Test fun `wav header is correct`() {

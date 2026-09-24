@@ -1,10 +1,10 @@
 package com.example
 
 import android.content.SharedPreferences
-import com.example.jarvis.AppContainer
-import com.example.jarvis.memory.MemoryDatabase
-import com.example.jarvis.security.SecretCipher
-import com.example.jarvis.security.SecureStore
+import com.jarvis.AppContainer
+import com.jarvis.memory.MemoryDatabase
+import com.jarvis.security.SecretCipher
+import com.jarvis.security.SecureStore
 
 /** Robolectric application: in-memory Room DB and a pass-through cipher instead of AndroidKeyStore. */
 class TestJarvisApplication : JarvisApplication() {

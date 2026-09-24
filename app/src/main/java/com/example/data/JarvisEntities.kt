@@ -19,7 +19,7 @@ data class Reminder(
     val createdAt: Long = System.currentTimeMillis()
 )
 
-enum class MemoryType { PREFERENCE, HABIT, FACT, IMPORTANT, PROFILE, COMMAND }
+enum class MemoryType { PREFERENCE, HABIT, FACT, IMPORTANT, PROFILE, PATTERN, COMMAND }
 
 /** Long-term memory entry. [key] de-duplicates facts ("name", "habit:sport" ...). */
 @Entity(tableName = "memories", indices = [Index(value = ["key"], unique = true), Index("type")])

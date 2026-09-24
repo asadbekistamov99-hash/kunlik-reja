@@ -12,9 +12,9 @@ import com.example.JarvisApplication
 import com.example.TestJarvisApplication
 import com.example.data.Reminder
 import com.example.data.Task
-import com.example.jarvis.service.JarvisForegroundService
-import com.example.jarvis.service.JarvisServiceController
-import com.example.jarvis.settings.JarvisSettings
+import com.jarvis.service.JarvisForegroundService
+import com.jarvis.service.JarvisServiceController
+import com.jarvis.settings.JarvisSettings
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

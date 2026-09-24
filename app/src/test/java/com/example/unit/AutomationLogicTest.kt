@@ -4,13 +4,13 @@ import com.example.data.Habit
 import com.example.data.MemoryType
 import com.example.data.Reminder
 import com.example.data.Task
-import com.example.jarvis.automation.HabitEngine
-import com.example.jarvis.automation.ReminderEngine
-import com.example.jarvis.automation.SmartPlanner
-import com.example.jarvis.memory.LongTermMemory
-import com.example.jarvis.settings.AiMode
-import com.example.jarvis.settings.JarvisSettings
-import com.example.jarvis.settings.SttEngineChoice
+import com.jarvis.automation.HabitEngine
+import com.jarvis.automation.ReminderEngine
+import com.jarvis.automation.SmartPlanner
+import com.jarvis.memory.UserMemory
+import com.jarvis.settings.AiMode
+import com.jarvis.settings.JarvisSettings
+import com.jarvis.settings.SttEngineChoice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -56,7 +56,7 @@ class AutomationLogicTest {
     }
 
     @Test fun `habit titles from statements`() {
-        assertEquals("Ertalab sport qilish", HabitEngine.titleFromStatement("Men har kuni ertalab sport qilaman"))
+        assertEquals("Sport qilish", HabitEngine.titleFromStatement("Men har kuni ertalab sport qilaman"))
         assertEquals("Kitob o'qish", HabitEngine.titleFromStatement("men har kuni kitob o'qiyman"))
         assertEquals("2 litr suv ichish", HabitEngine.titleFromStatement("Har kuni 2 litr suv ichaman"))
     }
@@ -64,15 +64,15 @@ class AutomationLogicTest {
     @Test fun `habit memory maps to preferred plan time`() {
         val item = SmartPlanner.habitItem("Men har kuni ertalab sport qilaman")
         assertEquals(LocalTime.of(7, 0), item.preferredStart)
-        assertEquals("Ertalab sport qilish", item.title)
+        assertEquals("Sport qilish", item.title)
         assertEquals("Bugun", SmartPlanner.dayLabel(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 1)))
         assertEquals("Ertaga", SmartPlanner.dayLabel(LocalDate.of(2026, 1, 2), LocalDate.of(2026, 1, 1)))
     }
 
     @Test fun `memory keys are order-insensitive and dedupe`() {
         assertEquals(
-            LongTermMemory.keyFor(MemoryType.HABIT, "Men har kuni ertalab sport qilaman"),
-            LongTermMemory.keyFor(MemoryType.HABIT, "har kuni sport qilaman ertalab")
+            UserMemory.keyFor(MemoryType.HABIT, "Men har kuni ertalab sport qilaman"),
+            UserMemory.keyFor(MemoryType.HABIT, "har kuni sport qilaman ertalab")
         )
     }
 

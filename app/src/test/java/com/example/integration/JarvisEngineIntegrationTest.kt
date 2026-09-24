@@ -6,26 +6,27 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.TestJarvisApplication
 import com.example.data.MemoryType
 import com.example.data.Task
-import com.example.jarvis.automation.HabitEngine
-import com.example.jarvis.automation.ReminderEngine
-import com.example.jarvis.automation.SmartPlanner
-import com.example.jarvis.core.ActionExecutor
-import com.example.jarvis.core.AgentContext
-import com.example.jarvis.core.AgentPort
-import com.example.jarvis.core.CommandParser
-import com.example.jarvis.core.IntentResolver
-import com.example.jarvis.core.IntentType
-import com.example.jarvis.core.JarvisEngine
-import com.example.jarvis.core.ResolvedIntent
-import com.example.jarvis.integrations.ContactHit
-import com.example.jarvis.integrations.FileHit
-import com.example.jarvis.integrations.NotificationItem
-import com.example.jarvis.memory.ContextMemory
-import com.example.jarvis.memory.ConversationHistory
-import com.example.jarvis.memory.LongTermMemory
-import com.example.jarvis.memory.MemoryDatabase
-import com.example.jarvis.settings.AiMode
-import com.example.jarvis.settings.JarvisSettings
+import com.jarvis.automation.HabitEngine
+import com.jarvis.automation.ReminderEngine
+import com.jarvis.automation.SmartPlanner
+import com.jarvis.automation.WorkPatternService
+import com.jarvis.core.ActionExecutor
+import com.jarvis.core.AgentContext
+import com.jarvis.core.AgentPort
+import com.jarvis.core.CommandParser
+import com.jarvis.core.IntentResolver
+import com.jarvis.core.IntentType
+import com.jarvis.core.JarvisEngine
+import com.jarvis.core.ResolvedIntent
+import com.jarvis.integrations.ContactHit
+import com.jarvis.integrations.FileHit
+import com.jarvis.integrations.NotificationItem
+import com.jarvis.memory.ContextManager
+import com.jarvis.memory.ConversationMemory
+import com.jarvis.memory.UserMemory
+import com.jarvis.memory.MemoryDatabase
+import com.jarvis.settings.AiMode
+import com.jarvis.settings.JarvisSettings
 import com.example.repository.TaskRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,7 +59,7 @@ class JarvisEngineIntegrationTest {
     private lateinit var engine: JarvisEngine
     private lateinit var tasks: TaskRepository
     private lateinit var settings: JarvisSettings
-    private lateinit var memory: LongTermMemory
+    private lateinit var memory: UserMemory
     private val device = FakeDevice()
     private val calendar = FakeCalendar()
     private val mail = FakeMail()
@@ -73,15 +74,17 @@ class JarvisEngineIntegrationTest {
         val reminders = ReminderEngine(context, db.reminderDao(), db.taskDao(), clockMillis)
         val habits = HabitEngine(db.habitDao())
         tasks = TaskRepository(db.taskDao(), db.habitDao(), reminders, habits)
-        memory = LongTermMemory(db.memoryDao())
+        memory = UserMemory(db.memoryDao())
         settings = JarvisSettings(db.userSettingsDao(), scope)
-        val ctx = ContextMemory()
+        val ctx = ContextManager()
         val planner = SmartPlanner(db.taskDao(), tasks, memory) { now }
-        val executor = ActionExecutor(tasks, reminders, habits, planner, memory, ctx, settings, device, calendar, mail, { now })
+        val patterns = WorkPatternService(db.taskDao(), db.conversationDao(), memory)
+        val executor = ActionExecutor(tasks, reminders, habits, planner, memory, ctx, settings, device, calendar, mail,
+            patterns = patterns, clock = { now })
         engine = JarvisEngine(CommandParser { now }, IntentResolver(), executor, object : AgentPort {
             override fun isAvailable() = agent?.isAvailable() == true
             override suspend fun decide(text: String, context: AgentContext) = agent?.decide(text, context)
-        }, ConversationHistory(db.conversationDao()), memory, ctx, tasks, { settings.state.value }, { now })
+        }, ConversationMemory(db.conversationDao()), memory, ctx, tasks, { settings.state.value }, { now })
     }
 
     @After fun tearDown() {
@@ -131,7 +134,7 @@ class JarvisEngineIntegrationTest {
         val habits = memory.byType(MemoryType.HABIT)
         assertEquals(1, habits.size)
         assertTrue(habits[0].content.contains("sport"))
-        assertEquals("Ertalab sport qilish", db.habitDao().getAll().single().title)
+        assertEquals("Sport qilish", db.habitDao().getAll().single().title)
         assertEquals(1440, db.reminderDao().getAll().single().repeatIntervalMinutes)
         // Saying it again does not duplicate.
         say("men har kuni ertalab sport qilaman")
@@ -225,6 +228,39 @@ class JarvisEngineIntegrationTest {
         assertFalse(called)
     }
 
+    @Test fun `deadline task is stored and planned first`() = runBlocking {
+        val r = say("Jarvis hisobotni jumagacha tayyorla")
+        assertEquals(IntentType.ADD_TASK, r.intent)
+        assertTrue(r.text, r.text.contains("Muddati"))
+        val saved = db.taskDao().getAll().single()
+        assertEquals("2026-09-25", saved.deadline)
+        // A task planned for next week whose deadline is tomorrow is pulled into today's plan.
+        tasks.insertTask(task("Taqdimot", "2026-09-28", "10:00").copy(deadline = "2026-09-24"))
+        say("Jarvis bugungi rejani tuz")
+        assertEquals("2026-09-23", db.taskDao().getAll().first { it.title == "Taqdimot" }.dateString)
+        assertTrue(say("Jarvis tugallanmagan ishlarimni ko'rsat").text.contains("muddati yaqin"))
+    }
+
+    @Test fun `habit said with an exact hour lands at that hour in tomorrow's plan`() = runBlocking {
+        say("Men har kuni 7 da sport qilaman")
+        assertEquals("Sport qilish", db.habitDao().getAll().single().title)
+        val plan = say("Jarvis ertangi rejani tuz")
+        assertEquals(IntentType.PLAN_DAY, plan.intent)
+        assertTrue(plan.card!!.items.toString(), plan.card!!.items.any { it.startsWith("07:00") && it.contains("Sport qilish") })
+    }
+
+    @Test fun `work patterns are analysed and remembered`() = runBlocking {
+        assertFalse(say("Jarvis ish odatlarim qanday").success)
+        repeat(6) { i ->
+            val t = tasks.insertTask(task("Ish $i", "2026-09-2${i % 3}", "09:00"))
+            tasks.updateTask(t.copy(isCompleted = true, completedAt = t.timestampMillis + 600_000))
+        }
+        val r = say("Jarvis ish odatlarim qanday")
+        assertTrue(r.text, r.success)
+        assertTrue(r.text, r.text.contains("09:00"))
+        assertTrue(memory.byType(MemoryType.PATTERN).isNotEmpty())
+    }
+
     @Test fun `conversation history is persisted`() = runBlocking {
         say("salom")
         val log = db.conversationDao().getAll()
@@ -232,7 +268,7 @@ class JarvisEngineIntegrationTest {
         assertEquals("USER", log[0].role)
     }
 
-    private fun waitForSettings(predicate: (com.example.jarvis.settings.SettingsSnapshot) -> Boolean) {
+    private fun waitForSettings(predicate: (com.jarvis.settings.SettingsSnapshot) -> Boolean) {
         val deadline = System.currentTimeMillis() + 3000
         while (!predicate(settings.state.value) && System.currentTimeMillis() < deadline) {
             shadowOf(android.os.Looper.getMainLooper()).idle()

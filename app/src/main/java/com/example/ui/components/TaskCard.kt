@@ -345,7 +345,16 @@ fun TaskCard(
                     )
                 }
 
-                if (task.hasReminder) {
+                if (task.deadline.isNotBlank()) {
+                    val late = !task.isCompleted && task.deadline < com.example.repository.TaskRepository.getTodayDateString()
+                    Text(
+                        text = if (late) "Muddat o'tdi: ${task.deadline}" else "Muddat: ${task.deadline}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (late) PriorityHigh else PriorityMedium,
+                        modifier = Modifier.testTag("task_deadline_${task.id}")
+                    )
+                } else if (task.hasReminder) {
                     Text(
                         text = "${task.reminderMinutesBefore} daq oldin eslatma",
                         fontSize = 11.sp,

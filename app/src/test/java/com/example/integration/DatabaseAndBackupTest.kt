@@ -10,11 +10,11 @@ import com.example.data.MemoryEntry
 import com.example.data.Reminder
 import com.example.data.Task
 import com.example.data.UserSetting
-import com.example.jarvis.memory.BackupCodec
-import com.example.jarvis.memory.BackupSerializer
-import com.example.jarvis.memory.BackupManager
-import com.example.jarvis.memory.MemoryDatabase
-import com.example.jarvis.security.DatabaseEncryption
+import com.jarvis.memory.BackupCodec
+import com.jarvis.memory.BackupSerializer
+import com.jarvis.memory.BackupManager
+import com.jarvis.memory.MemoryDatabase
+import com.jarvis.security.DatabaseEncryption
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

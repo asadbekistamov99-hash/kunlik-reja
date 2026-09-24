@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * Schema history:
  *  v3 — tasks + habits (Kun Tartibi planner)
  *  v4 — Jarvis Ultra: reminders, memories, conversations, user_settings
+ *  v5 — tasks.deadline and tasks.completedAt
  */
 object Migrations {
 
@@ -40,5 +41,14 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_3_4)
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `tasks` ADD COLUMN `deadline` TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE `tasks` ADD COLUMN `completedAt` INTEGER NOT NULL DEFAULT 0")
+            // Best effort for already-completed tasks: assume they were finished at their scheduled time.
+            db.execSQL("UPDATE `tasks` SET `completedAt` = `timestampMillis` WHERE `isCompleted` = 1")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_3_4, MIGRATION_4_5)
 }

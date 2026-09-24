@@ -14,13 +14,13 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
-import com.example.jarvis.core.IntentType
-import com.example.jarvis.memory.MemoryDatabase
-import com.example.jarvis.security.DatabaseEncryption
-import com.example.jarvis.service.JarvisForegroundService
-import com.example.jarvis.service.JarvisServiceController
-import com.example.jarvis.settings.JarvisSettings
-import com.example.jarvis.voice.AssistantStatus
+import com.jarvis.core.IntentType
+import com.jarvis.memory.MemoryDatabase
+import com.jarvis.security.DatabaseEncryption
+import com.jarvis.service.JarvisForegroundService
+import com.jarvis.service.JarvisServiceController
+import com.jarvis.settings.JarvisSettings
+import com.jarvis.voice.AssistantStatus
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -155,6 +155,19 @@ class JarvisDeviceTest {
         shell("settings put global low_power 0")
         assertTrue(waitFor { container.voice.state.value.status != AssistantStatus.PAUSED })
         assertTrue(JarvisForegroundService.isRunning)
+    }
+
+    @Test fun restartsAutomaticallyFromBackgroundWithOverlayPermission() {
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("screen_dashboard").fetchSemanticsNodes().isNotEmpty() }
+        shell("appops set ${context.packageName} SYSTEM_ALERT_WINDOW allow")
+        assumeTrue("overlay permission not applied", waitFor(5_000) { android.provider.Settings.canDrawOverlays(context) })
+        shell("input keyevent KEYCODE_HOME")
+        Thread.sleep(1500)
+        JarvisServiceController.startFromBackground(context)
+        assertTrue("service restarted without user interaction", waitFor { JarvisForegroundService.isRunning })
+        val nm = context.getSystemService(NotificationManager::class.java)
+        assertTrue("resume notification cleared", waitFor(5_000) { nm.activeNotifications.none { it.id == 4243 } })
+        shell("appops set ${context.packageName} SYSTEM_ALERT_WINDOW default")
     }
 
     @Test fun rebootRecoveryPath() {

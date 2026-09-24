@@ -89,6 +89,23 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Generate wake-word audio fixtures (espeak-ng)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq espeak-ng ffmpeg >/dev/null
+          out=app/src/androidTest/assets/audio; mkdir -p "$out"
+          gen() { espeak-ng -v "$2" -s "$3" -w /tmp/raw.wav "$4" && ffmpeg -loglevel error -y -i /tmp/raw.wav -ar 16000 -ac 1 -sample_fmt s16 -map_metadata -1 -fflags +bitexact -flags:a +bitexact "$out/$1.wav"; }
+          for v in en-us en-gb en-us+m3 en-us+f3; do
+            for sp in 130 160; do
+              tag="${v//+/_}_$sp"
+              gen "heyjarvis_$tag" "$v" "$sp" "hey jarvis"
+              gen "jarvis_$tag" "$v" "$sp" "jarvis"
+            done
+          done
+          gen neg_hello en-us 150 "hello world"
+          gen neg_morning en-us 150 "good morning, how are you"
+          gen neg_uz en-us 150 "ertaga soat to'qqizda uchrashuv"
+          gen neg_service en-us 150 "customer service"
+          ls -la "$out"
       - name: Build test APKs
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
       - name: Run instrumented tests on emulator

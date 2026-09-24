@@ -53,9 +53,9 @@ class TaskReminderReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_TASK_ALARM = "com.example.jarvis.ACTION_TASK_ALARM"
-        const val ACTION_REMINDER_ALARM = "com.example.jarvis.ACTION_REMINDER_ALARM"
-        const val ACTION_MARK_COMPLETED = "com.example.jarvis.ACTION_MARK_COMPLETED"
+        const val ACTION_TASK_ALARM = "com.jarvis.ACTION_TASK_ALARM"
+        const val ACTION_REMINDER_ALARM = "com.jarvis.ACTION_REMINDER_ALARM"
+        const val ACTION_MARK_COMPLETED = "com.jarvis.ACTION_MARK_COMPLETED"
         const val EXTRA_TASK_ID = "EXTRA_TASK_ID"
         const val EXTRA_REMINDER_ID = "EXTRA_REMINDER_ID"
         const val EXTRA_NOTIFICATION_ID = "EXTRA_NOTIFICATION_ID"

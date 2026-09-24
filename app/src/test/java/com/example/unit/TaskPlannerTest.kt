@@ -1,9 +1,9 @@
 package com.example.unit
 
 import com.example.data.Task
-import com.example.jarvis.core.BlockKind
-import com.example.jarvis.core.FlexibleItem
-import com.example.jarvis.core.TaskPlanner
+import com.jarvis.core.BlockKind
+import com.jarvis.core.FlexibleItem
+import com.jarvis.core.TaskPlanner
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -20,7 +20,7 @@ class TaskPlannerTest {
         Task(id = id, title = title, dateString = day.toString(), timeString = time, timestampMillis = 0,
             durationMinutes = minutes, priority = priority, isCompleted = done)
 
-    private fun noOverlaps(blocks: List<com.example.jarvis.core.PlanBlock>) {
+    private fun noOverlaps(blocks: List<com.jarvis.core.PlanBlock>) {
         blocks.sortedBy { it.start }.zipWithNext().forEach { (a, b) ->
             assertFalse("${a.title} overlaps ${b.title}", TaskPlanner.overlaps(a.start, a.end, b.start, b.end))
         }

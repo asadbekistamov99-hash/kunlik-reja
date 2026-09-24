@@ -10,15 +10,16 @@ import com.example.data.ConversationMessage
 import com.example.data.MemoryEntry
 import com.example.data.MemoryType
 import com.example.data.Reminder
-import com.example.jarvis.AppContainer
-import com.example.jarvis.integrations.CalendarEvent
-import com.example.jarvis.memory.BackupException
-import com.example.jarvis.security.SecureStore
-import com.example.jarvis.service.JarvisForegroundService
-import com.example.jarvis.service.JarvisServiceController
-import com.example.jarvis.settings.JarvisSettings
-import com.example.jarvis.settings.SettingsSnapshot
-import com.example.jarvis.voice.VoiceUiState
+import com.jarvis.AppContainer
+import com.jarvis.integrations.CalendarEvent
+import com.jarvis.memory.BackupException
+import com.jarvis.security.SecureStore
+import com.jarvis.service.JarvisForegroundService
+import com.jarvis.service.JarvisServiceController
+import com.jarvis.settings.JarvisSettings
+import com.jarvis.settings.SettingsSnapshot
+import com.jarvis.voice.VoiceUiState
+import com.jarvis.voice.VoskModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -40,7 +41,11 @@ class JarvisViewModel(private val container: AppContainer) : ViewModel() {
         container.longTermMemory.all.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val reminders: StateFlow<List<Reminder>> =
         container.database.reminderDao().observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val voskProgress: StateFlow<Float?> = container.vosk.downloadProgress
+    /** Offline models the user can manage: id to (label, model). */
+    val offlineModels: List<Triple<String, String, VoskModel>> = listOf(
+        Triple("keyword", "\"Jarvis\" kalit so'zi (oflayn, ~${container.voskKeywordModel.sizeMb} MB)", container.voskKeywordModel),
+        Triple("uz", "O'zbek nutqini tanish (oflayn, ~${container.voskUzModel.sizeMb} MB)", container.voskUzModel)
+    )
 
     private val _events = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val events: SharedFlow<String> = _events.asSharedFlow()
@@ -50,8 +55,12 @@ class JarvisViewModel(private val container: AppContainer) : ViewModel() {
     private val _calendarError = MutableStateFlow<String?>(null)
     val calendarError: StateFlow<String?> = _calendarError.asStateFlow()
 
-    private val _voskInstalled = MutableStateFlow(container.vosk.isInstalled())
-    val voskInstalled: StateFlow<Boolean> = _voskInstalled.asStateFlow()
+    private val _modelsInstalled = MutableStateFlow(offlineModels.associate { it.first to it.third.isInstalled() })
+    val modelsInstalled: StateFlow<Map<String, Boolean>> = _modelsInstalled.asStateFlow()
+
+    private fun refreshModels() {
+        _modelsInstalled.value = offlineModels.associate { it.first to it.third.isInstalled() }
+    }
 
     fun message(text: String) { _events.tryEmit(text) }
 
@@ -103,15 +112,22 @@ class JarvisViewModel(private val container: AppContainer) : ViewModel() {
         container.tts.speak("Salom! Men Jarvisman. Sizga qanday yordam bera olaman?")
     }
 
-    fun downloadVosk() = viewModelScope.launch {
-        val ok = container.vosk.download()
-        _voskInstalled.value = container.vosk.isInstalled()
-        message(if (ok) "Oflayn o'zbek ovoz modeli o'rnatildi" else "Model yuklanmadi. Internetni tekshiring")
+    fun downloadModel(id: String) = viewModelScope.launch {
+        val model = offlineModels.first { it.first == id }.third
+        val ok = model.download()
+        refreshModels()
+        container.settings.set(JarvisSettings.MODELS_REV, System.currentTimeMillis())
+        message(if (ok) "Oflayn model o'rnatildi" else "Model yuklanmadi. Internetni tekshiring")
     }
 
-    fun deleteVosk() {
-        container.vosk.delete()
-        _voskInstalled.value = false
+    fun deleteModel(id: String) = viewModelScope.launch {
+        offlineModels.first { it.first == id }.third.delete()
+        refreshModels()
+        container.settings.set(JarvisSettings.MODELS_REV, System.currentTimeMillis())
+    }
+
+    fun workPatternsText(onResult: (String) -> Unit) = viewModelScope.launch {
+        onResult(container.workPatterns.refresh().describe())
     }
 
     fun addFileTree(context: Context, uri: Uri) = viewModelScope.launch {

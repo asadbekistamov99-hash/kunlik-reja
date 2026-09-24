@@ -48,8 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.ConversationRole
-import com.example.jarvis.core.ActionExecutor
-import com.example.jarvis.voice.AssistantStatus
+import com.jarvis.core.ActionExecutor
+import com.jarvis.voice.AssistantStatus
 import com.example.ui.components.GlassCard
 import com.example.ui.components.JarvisOrb
 import com.example.ui.components.SectionTitle
