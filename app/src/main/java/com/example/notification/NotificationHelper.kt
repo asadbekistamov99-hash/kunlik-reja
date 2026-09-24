@@ -61,15 +61,15 @@ object NotificationHelper {
             activeRingtone = ringtone
 
             Handler(Looper.getMainLooper()).postDelayed({
-                activeRingtone?.stop()
-                activeRingtone = null
+                ringtone.stop()
+                if (activeRingtone === ringtone) activeRingtone = null
             }, durationMs)
         } catch (_: Exception) {
         }
     }
 
     fun scheduleTaskAlarm(context: Context, task: Task) {
-        if (!task.hasReminder) return
+        if (!task.hasReminder || task.isCompleted) return
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
 
@@ -109,11 +109,7 @@ object NotificationHelper {
                 )
             }
         } catch (_: SecurityException) {
-            alarmManager.set(
-                AlarmManager.RTC_WAKEUP,
-                triggerMillis,
-                pendingIntent
-            )
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pendingIntent)
         }
     }
 
@@ -139,7 +135,10 @@ object NotificationHelper {
         notificationId: Int = (System.currentTimeMillis() % 10000).toInt()
     ) {
         createNotificationChannel(context)
-        playAlarmSound(context, 3000L)
+        if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context,
+                android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            throw IllegalStateException("Bildirishnoma ruxsati o'chirilgan. Ilova sozlamalaridan yoqing.")
+        }
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK

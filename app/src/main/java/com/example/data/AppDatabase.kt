@@ -20,7 +20,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "kun_tartibi_db"
-                ).fallbackToDestructiveMigration()
+                ).addMigrations(DatabaseMigrations.FROM_1, DatabaseMigrations.FROM_2)
                 .build()
                 INSTANCE = instance
                 instance

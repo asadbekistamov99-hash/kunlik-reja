@@ -1,5 +1,16 @@
 package com.example
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.jarvis.*
+import com.example.ui.components.*
+import kotlinx.coroutines.flow.first
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -73,6 +84,11 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private lateinit var viewModel: TaskViewModel
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if(intent.getBooleanExtra("open_jarvis", false)) JarvisRuntime.get(this).openPanel()
+    }
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -88,13 +104,47 @@ class MainActivity : ComponentActivity() {
         NotificationHelper.createNotificationChannel(applicationContext)
 
         setContent {
-            KunTartibiTheme {
+            val runtime = remember { JarvisRuntime.get(applicationContext) }
+            val theme by runtime.theme.collectAsStateWithLifecycle()
+            KunTartibiTheme(darkTheme = when(theme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }) {
                 val context = LocalContext.current
-                var selectedTab by remember { mutableIntStateOf(0) } // 0: Schedule, 1: Task List, 2: Stats
+                var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0: Schedule, 1: Task List, 2: Stats
 
                 var showBottomSheet by remember { mutableStateOf(false) }
-                var showJarvisDialog by remember { mutableStateOf(false) }
+                var showJarvisDialog by remember { mutableStateOf(intent.getBooleanExtra("open_jarvis", false)) }
                 var taskToEdit by remember { mutableStateOf<Task?>(null) }
+                var showHabits by remember { mutableStateOf(false) }
+                var showFocus by remember { mutableStateOf(false) }
+                var showMenu by remember { mutableStateOf(false) }
+                val snackbar = remember { SnackbarHostState() }
+                val allTasks by viewModel.allTasks.collectAsStateWithLifecycle()
+                val allHabits by viewModel.allHabits.collectAsStateWithLifecycle()
+                LaunchedEffect(Unit) { viewModel.errors.collect { snackbar.showSnackbar(it) } }
+                LaunchedEffect(runtime) {
+                    lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                        runtime.request.collect { request ->
+                            if(request != null) {
+                                runtime.acknowledge(request.token)
+                                when(request.action) {
+                                    "SCHEDULE" -> { selectedTab = 0; viewModel.setSelectedDate(request.value); viewModel.setSearchQuery(""); viewModel.setStatusFilter("ALL"); viewModel.setSelectedCategory(null); viewModel.setSelectedPriority(null) }
+                                    "SEARCH" -> { selectedTab = 1; viewModel.setSearchQuery(request.value); viewModel.setStatusFilter("ALL"); viewModel.setSelectedCategory(null); viewModel.setSelectedPriority(null) }
+                                    "PANEL" -> showJarvisDialog = true
+                                    "STATS" -> selectedTab = 2
+                                    "HABITS" -> { showJarvisDialog = false; showHabits = true }
+                                    "FOCUS" -> { showJarvisDialog = false; showFocus = true }
+                                    "NEW_TASK" -> { showJarvisDialog = false; taskToEdit = null; showBottomSheet = true }
+                                    "EDIT_TASK" -> { taskToEdit = repository.getTaskById(request.taskId); if(taskToEdit != null) { showJarvisDialog = false; showBottomSheet = true } }
+                                    "COPY" -> ScheduleExportHelper.copyScheduleToClipboard(context, viewModel.selectedDate.value, repository.allTasks.first().filter { it.dateString == viewModel.selectedDate.value })
+                                    "FILTER_CATEGORY" -> { selectedTab = 1; viewModel.setSelectedCategory(request.value) }
+                                    "FILTER_PRIORITY" -> { selectedTab = 1; viewModel.setSelectedPriority(request.value) }
+                                    "FILTER_STATUS" -> { selectedTab = 1; viewModel.setStatusFilter(request.value) }
+                                    "CLEAR_FILTERS" -> { viewModel.setSearchQuery(""); viewModel.setStatusFilter("ALL"); viewModel.setSelectedCategory(null); viewModel.setSelectedPriority(null) }
+                                    "EXPORT" -> ScheduleExportHelper.shareScheduleText(context, viewModel.selectedDate.value, repository.allTasks.first().filter { it.dateString == viewModel.selectedDate.value })
+                                }
+                            }
+                        }
+                    }
+                }
                 var selectedTaskForAction by remember { mutableStateOf<Task?>(null) }
                 val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
                 val jarvisSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -120,11 +170,24 @@ class MainActivity : ComponentActivity() {
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
+                    snackbarHost = { SnackbarHost(snackbar) },
+                    topBar = {
+                        TopAppBar(title = { Text("Kunlik reja", fontWeight = FontWeight.Bold) }, actions = {
+                            IconButton(onClick = { showFocus = true }) { Icon(Icons.Default.Timer, "Fokus") }
+                            IconButton(onClick = { showHabits = true }) { Icon(Icons.Default.Loop, "Odatlar") }
+                            IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "Qo'shimcha") }
+                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                DropdownMenuItem(text = { Text("Jadvalni ulashish") }, onClick = { showMenu = false; runtime.submit("eksport") })
+                                DropdownMenuItem(text = { Text("Tungi rejim") }, onClick = { showMenu = false; runtime.submit("tungi rejim") })
+                                DropdownMenuItem(text = { Text("Yorug' rejim") }, onClick = { showMenu = false; runtime.submit("yorug' rejim") })
+                                DropdownMenuItem(text = { Text("Tizim mavzusi") }, onClick = { showMenu = false; runtime.submit("tizim mavzusi") })
+                            }
+                        })
+                    },
                     bottomBar = {
                         NavigationBar(
                             modifier = Modifier
-                                .testTag("nav_bar")
-                                .windowInsetsPadding(WindowInsets.navigationBars),
+                                .testTag("nav_bar"),
                             containerColor = MaterialTheme.colorScheme.surface,
                             tonalElevation = 8.dp
                         ) {
@@ -204,6 +267,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    if(showHabits) HabitTrackerDialog(allHabits, { showHabits = false }, viewModel::toggleHabitForToday, { viewModel.addHabit(it) }, viewModel::deleteHabit)
+                    if(showFocus) FocusModeDialog(allTasks.filter { !it.isCompleted }, { showFocus = false }, viewModel::completeTask)
                     // Add/Edit Task Bottom Sheet
                     if (showBottomSheet) {
                         AddTaskBottomSheet(
@@ -248,7 +313,8 @@ class MainActivity : ComponentActivity() {
                     }
 
                     // Task Detail / Action Dialog (Edit, Delete, Toggle Complete)
-                    selectedTaskForAction?.let { task ->
+                    selectedTaskForAction?.let { selected ->
+                        val task = allTasks.find { it.id == selected.id } ?: selected
                         TaskActionDialog(
                             task = task,
                             onDismiss = { selectedTaskForAction = null },
@@ -260,6 +326,7 @@ class MainActivity : ComponentActivity() {
                             onDelete = { taskToDelete ->
                                 viewModel.deleteTask(taskToDelete)
                             },
+                            onUpdateTask = viewModel::updateTask,
                             onToggleComplete = { taskToToggle ->
                                 viewModel.toggleTaskCompletion(taskToToggle)
                             }

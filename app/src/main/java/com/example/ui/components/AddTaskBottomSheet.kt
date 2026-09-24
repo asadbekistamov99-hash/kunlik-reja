@@ -600,6 +600,6 @@ fun AddTaskBottomSheet(
 private fun getTomorrowDateString(): String {
     val cal = Calendar.getInstance()
     cal.add(Calendar.DAY_OF_YEAR, 1)
-    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
     return sdf.format(cal.time)
 }

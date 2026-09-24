@@ -47,6 +47,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.Task
 import com.example.data.TaskPriority
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import com.example.data.SubtaskItem
 import com.example.ui.theme.PriorityHigh
 import com.example.ui.theme.PriorityHighContainer
 import com.example.ui.theme.PriorityLow
@@ -60,7 +64,8 @@ fun TaskActionDialog(
     onDismiss: () -> Unit,
     onEdit: (Task) -> Unit,
     onDelete: (Task) -> Unit,
-    onToggleComplete: (Task) -> Unit
+    onToggleComplete: (Task) -> Unit,
+    onUpdateTask: (Task) -> Unit = {}
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
@@ -102,7 +107,7 @@ fun TaskActionDialog(
             title = null,
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                 ) {
                     // Header Row: Category Badge & Close Icon
                     Row(
@@ -211,6 +216,25 @@ fun TaskActionDialog(
 
                     Spacer(modifier = Modifier.height(18.dp))
 
+                    if (task.voiceNoteText.isNotBlank()) {
+                        Text("Qayd", fontWeight = FontWeight.SemiBold)
+                        Text(task.voiceNoteText, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    val subtasks = SubtaskItem.parseList(task.subtasksJson)
+                    if (subtasks.isNotEmpty()) {
+                        Text("Kichik vazifalar", fontWeight = FontWeight.SemiBold)
+                        subtasks.forEachIndexed { index, item ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = item.isCompleted, onCheckedChange = { checked ->
+                                    onUpdateTask(task.copy(subtasksJson = SubtaskItem.serializeList(
+                                        subtasks.mapIndexed { i, entry -> if(i == index) entry.copy(isCompleted = checked) else entry }
+                                    )))
+                                })
+                                Text(item.title, modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
                     // Action Buttons
                     Column(
                         modifier = Modifier.fillMaxWidth(),

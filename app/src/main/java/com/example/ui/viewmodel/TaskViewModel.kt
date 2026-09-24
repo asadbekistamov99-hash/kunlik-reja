@@ -11,6 +11,7 @@ import com.example.data.TaskCategory
 import com.example.data.TaskPriority
 import com.example.notification.NotificationHelper
 import com.example.repository.TaskRepository
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,11 @@ import java.util.Date
 import java.util.Locale
 
 class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
+    private val _errors = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.BUFFERED)
+    val errors = _errors.receiveAsFlow()
+    private val errorHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+        _errors.trySend(error.message ?: "Amal bajarilmadi. Qayta urinib ko'ring.")
+    }
 
     private val _selectedDate = MutableStateFlow(TaskRepository.getTodayDateString())
     val selectedDate: StateFlow<String> = _selectedDate.asStateFlow()
@@ -58,10 +64,9 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         allTasks,
         _selectedDate,
         _selectedCategory,
-        _selectedPriority,
-        _statusFilter,
-        _searchQuery
-    ) { tasks, date, category, priority, status, query ->
+        combine(_selectedPriority, _statusFilter, _searchQuery) { priority, status, query -> Triple(priority, status, query) }
+    ) { tasks, date, category, filters ->
+        val (priority, status, query) = filters
         tasks.filter { task ->
             val matchesDate = task.dateString == date
             val matchesCategory = category == null || task.category == category
@@ -82,11 +87,6 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         initialValue = emptyList()
     )
 
-    init {
-        viewModelScope.launch {
-            repository.initializeDefaultTasksIfEmpty()
-        }
-    }
 
     fun setSelectedDate(dateString: String) {
         _selectedDate.value = dateString
@@ -109,31 +109,35 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
     }
 
     fun toggleHabitForToday(habit: Habit) {
-        viewModelScope.launch {
+        viewModelScope.launch(errorHandler) {
             repository.toggleHabitForToday(habit)
         }
     }
 
     fun addHabit(title: String, category: String = TaskCategory.HEALTH.name) {
-        viewModelScope.launch {
+        viewModelScope.launch(errorHandler) {
             repository.insertHabit(Habit(title = title, category = category))
         }
     }
 
     fun deleteHabit(habit: Habit) {
-        viewModelScope.launch {
+        viewModelScope.launch(errorHandler) {
             repository.deleteHabit(habit)
         }
     }
 
     fun toggleTaskCompletion(task: Task) {
-        viewModelScope.launch {
+        viewModelScope.launch(errorHandler) {
             repository.updateTask(task.copy(isCompleted = !task.isCompleted))
         }
     }
 
+    fun completeTask(task: Task) {
+        viewModelScope.launch(errorHandler) { repository.updateTask(task.copy(isCompleted = true)) }
+    }
+
     fun deleteTask(task: Task) {
-        viewModelScope.launch {
+        viewModelScope.launch(errorHandler) {
             repository.deleteTask(task)
         }
     }
@@ -150,8 +154,10 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         reminderMinutesBefore: Int,
         recurringType: String = "NONE"
     ) {
-        viewModelScope.launch {
-            val dateSdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        viewModelScope.launch(errorHandler) {
+            com.example.data.TaskValidation.timestamp(dateString, timeString)
+            require(title.isNotBlank()) { "Vazifa nomini kiriting." }
+            val dateSdf = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }
             val initialCal = Calendar.getInstance()
             try {
                 dateSdf.parse(dateString)?.let { initialCal.time = it }
@@ -198,7 +204,7 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
     }
 
     fun updateTask(task: Task) {
-        viewModelScope.launch {
+        viewModelScope.launch(errorHandler) {
             repository.updateTask(task)
         }
     }
