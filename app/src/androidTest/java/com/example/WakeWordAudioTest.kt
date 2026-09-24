@@ -66,7 +66,13 @@ class WakeWordAudioTest {
         val negatives = clips("neg_")
         assumeTrue("audio fixtures not generated", positives.isNotEmpty() && negatives.isNotEmpty())
         val model = VoskModel(target, OkHttpClient(), "vosk/test-en", VoskModel.EN_URL, 40)
-        assumeTrue("could not download the Vosk model", runBlocking { model.download() })
+        // Another test may have just toggled airplane mode: wait for connectivity, then retry the download.
+        val network = com.jarvis.voice.NetworkMonitor(target)
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("cmd connectivity airplane-mode disable").close()
+        val deadline = System.currentTimeMillis() + 60_000
+        while (!network.isOnline() && System.currentTimeMillis() < deadline) Thread.sleep(500)
+        val downloaded = (1..3).any { attempt -> runBlocking { model.download() } || run { Thread.sleep(3_000L * attempt); false } }
+        assumeTrue("could not download the Vosk model", downloaded)
         val loaded = runBlocking { model.load() }
         val matcher = JarvisKeywordMatcher(0.8f)
         /** Best "jarvis" confidence across the utterance's final results (0 when never recognised). */
