@@ -93,7 +93,8 @@ jobs:
             echo
             echo "${SIGNING_NOTE}"
             echo
-            sed -n '/^## \[1.0.0\]/,/^## \[/p' CHANGELOG.md | sed '$d' | tail -n +2
+            VER="${RELEASE_TAG#v}"
+            awk -v v="$VER" 'index($0, "## [" v "]")==1 {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md
             echo
             echo "Installation guide: see INSTALL.md attached below."
           } > dist/RELEASE_NOTES.md
@@ -102,7 +103,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: Jarvis Ultra v1.0
+          name: Jarvis Ultra ${{ env.RELEASE_TAG }}
           body_path: dist/RELEASE_NOTES.md
           target_commitish: ${{ github.sha }}
           make_latest: true

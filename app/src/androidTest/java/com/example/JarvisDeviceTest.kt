@@ -105,6 +105,11 @@ class JarvisDeviceTest {
             compose.onNodeWithTag(nav).performClick()
             compose.waitUntil(5_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
         }
+        // Focus timer and habit tracker open from the Tasks screen.
+        compose.onNodeWithTag("nav_tasks").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("action_focus").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("action_focus").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("dialog_focus_mode").fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test fun worksWithoutInternet() {

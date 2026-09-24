@@ -88,6 +88,7 @@ class SmartPlanner(
 
     companion object {
         private val HHMM = DateTimeFormatter.ofPattern("HH:mm")
+        private val DIGIT_RE = Regex("""\d""")
 
         fun dayLabel(date: LocalDate, today: LocalDate = LocalDate.now()): String = when (date) {
             today -> "Bugun"
@@ -99,9 +100,10 @@ class SmartPlanner(
         /** Turns a remembered habit ("Har kuni ertalab sport qilaman") into a plan block. */
         fun habitItem(content: String): FlexibleItem {
             val lower = content.lowercase()
-            // An explicit time ("har kuni 7 da sport") wins over time-of-day words.
-            val explicit = CommandParser { LocalDateTime.of(2000, 1, 1, 0, 0) }.parse(content)
-                .takeIf { !it.isRelative }?.time
+            // An explicit clock hour ("har kuni 7 da sport") wins over time-of-day words like "ertalab",
+            // which only express a preference.
+            val parsed = CommandParser { LocalDateTime.of(2000, 1, 1, 0, 0) }.parse(content)
+            val explicit = parsed.time?.takeIf { !parsed.isRelative && DIGIT_RE.containsMatchIn(parsed.normalized) }
             val preferred = explicit ?: when {
                 "ertalab" in lower || "tong" in lower -> LocalTime.of(7, 0)
                 "tush" in lower -> LocalTime.of(13, 0)
