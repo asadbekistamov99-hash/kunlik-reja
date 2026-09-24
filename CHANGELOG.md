@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.1.0] - 2026-09-24
+
+### Added
+- **Offline single-word "Jarvis" wake word without any API key.** Vosk keyword spotting with a filler-word grammar and confidence-gated final results. Audio is decoded only while there is speech energy.
+- **Automatic offline model download.** When Jarvis is on and the network is unmetered (Wi-Fi), the "Jarvis" keyword model (~40 MB) and the Uzbek speech model (~50 MB) download on their own. Settings shows their status and a toggle.
+- **Deadlines.** `tasks.deadline` column (Room v5). Voice phrases like "hisobotni jumagacha tayyorla", "30 sentabrgacha" and "muddati dushanba" set it. A deadline field is in the task editor and a deadline badge on task cards. The planner schedules the nearest deadline first and pulls tasks due by tomorrow into today. Summaries and the pending list mention deadlines that are near or already passed.
+- **Work-pattern learning** (`WorkPatternAnalyzer`). From real completion history (`tasks.completedAt`) Jarvis learns your most productive hours, best weekday, completion and on-time rates, and strongest/weakest categories. They are stored in long-term memory, shown on the Statistics and Memory screens, and available by voice ("Jarvis ish odatlarim qanday?"). The planner puts urgent work into your productive hours.
+- **Exact-time habits.** "Men har kuni 7 da sport qilaman" pins sport at 07:00 in every plan, even before the configured working day, besides the daily 07:00 reminder. Time-of-day words ("ertalab") remain a soft preference.
+- **Automatic restart after reboot on Android 14/15** when "display over other apps" is granted, via an invisible one-frame starter activity. Otherwise the one-tap notification remains.
+- **Focus timer, habit tracker and schedule export** (share / copy) are reachable from the Tasks screen. They existed in the code before but were never connected to any screen.
+
+### Verified
+- CI: debug and R8 release builds and lint pass. 95 JVM + Robolectric tests pass (unit, integration on SDK 31/33/34/35, Compose UI).
+- Emulators on Android 12, 13, 14 and 15 each run 9 instrumented tests, all passing with none skipped. Besides the 1.0 coverage, this now includes automatic background restart with the overlay permission, the focus-timer dialog, and **both offline wake-word engines fed real synthesized audio**. openWakeWord detects "hey jarvis" clips, and Vosk detects single-word "jarvis" clips. Neither triggers on "hello world", "good morning, how are you", "customer service" or Uzbek speech.
+- Found and fixed by these tests: the first Vosk grammar (`jarvis` + `[unk]` only) produced false positives on 3 of 4 negative phrases. Filler words and confidence gating removed them.
+
+### Changed
+- Assistant code moved to `com.jarvis.*` with the module/file layout from the specification (`KeywordDetector`, `SpeechRecognizer`, `TextToSpeechManager`, `VoiceSession`, `UserMemory`, `ConversationMemory`, `ContextManager`, `CalendarManager`, `GmailManager`, `CameraManager`, `ContactManager`, ...).
+- Habit titles no longer contain time phrases ("7 da sport qilaman" → "Sport qilish").
+- Release notes and names are taken from the version being released.
+
 ## [1.0.0] - 2026-09-23 — Jarvis Ultra v1.0
 
 The first release as Jarvis Ultra. The "Kun Tartibi" planner becomes a full voice assistant.
