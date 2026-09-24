@@ -137,18 +137,23 @@ class V11FeaturesTest {
 
     // ---------- "Jarvis" keyword matcher ----------
 
-    @Test fun `keyword matcher uses confidences and partial stability`() {
-        val m = JarvisKeywordMatcher(0.7f)
+    @Test fun `keyword matcher requires a confident final jarvis word`() {
+        val m = JarvisKeywordMatcher(0.8f)
         assertTrue(m.onResult("""{"result":[{"conf":0.93,"end":1.0,"start":0.5,"word":"jarvis"}],"text":"jarvis"}"""))
-        assertFalse(m.onResult("""{"result":[{"conf":0.41,"end":1.0,"start":0.5,"word":"jarvis"}],"text":"jarvis"}"""))
-        assertFalse(m.onResult("""{"text":"[unk]"}"""))
-        assertTrue(m.onResult("""{"text":"jarvis"}"""))
-        m.reset()
-        assertFalse(m.onPartial("""{"partial":"jarvis"}"""))
-        assertTrue(m.onPartial("""{"partial":"jarvis"}"""))
-        m.reset()
-        assertFalse(m.onPartial("""{"partial":"jarvis"}"""))
-        assertFalse(m.onPartial("""{"partial":""}"""))
-        assertFalse(m.onPartial("""{"partial":"jarvis"}"""))
+        assertFalse(m.onResult("""{"result":[{"conf":0.61,"end":1.0,"start":0.5,"word":"jarvis"}],"text":"jarvis"}"""))
+        assertTrue(m.onResult("""{"result":[{"conf":1.0,"end":0.4,"start":0.1,"word":"hey"},{"conf":0.97,"end":1.0,"start":0.5,"word":"jarvis"}],"text":"hey jarvis"}"""))
+        assertFalse(m.onResult("""{"result":[{"conf":0.99,"end":1.0,"start":0.5,"word":"service"}],"text":"customer service"}"""))
+        // Without word confidences (setWords(false)) nothing triggers.
+        assertFalse(m.onResult("""{"text":"jarvis"}"""))
+        assertEquals(0.97f, m.jarvisConfidence("""{"result":[{"conf":0.97,"word":"jarvis"}]}""")!!, 1e-6f)
+        assertNull(m.jarvisConfidence("""{"text":"[unk]"}"""))
+    }
+
+    @Test fun `keyword grammar lists jarvis once plus fillers and unk`() {
+        val g = JarvisKeywordMatcher.GRAMMAR
+        assertTrue(g.startsWith("[\"jarvis\", "))
+        assertTrue(g.endsWith("\"[unk]\"]"))
+        assertEquals(1, Regex("\"jarvis\"").findAll(g).count())
+        assertTrue(g.contains("\"service\""))
     }
 }
