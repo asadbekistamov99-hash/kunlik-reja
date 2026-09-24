@@ -47,12 +47,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.BuildConfig
-import com.example.jarvis.security.JarvisCapability
-import com.example.jarvis.security.PermissionManager
-import com.example.jarvis.settings.AiMode
-import com.example.jarvis.settings.JarvisSettings
-import com.example.jarvis.settings.SttEngineChoice
-import com.example.jarvis.settings.WakeEngineChoice
+import com.jarvis.security.JarvisCapability
+import com.jarvis.security.PermissionManager
+import com.jarvis.settings.AiMode
+import com.jarvis.settings.JarvisSettings
+import com.jarvis.settings.SttEngineChoice
+import com.jarvis.settings.WakeEngineChoice
 import com.example.ui.components.GlassCard
 import com.example.ui.components.SectionTitle
 import com.example.ui.navigation.LocalHostActions
@@ -65,8 +65,7 @@ import com.example.ui.viewmodel.JarvisViewModel
 @Composable
 fun SettingsScreen(vm: JarvisViewModel) {
     val s by vm.settings.collectAsStateWithLifecycle()
-    val voskInstalled by vm.voskInstalled.collectAsStateWithLifecycle()
-    val voskProgress by vm.voskProgress.collectAsStateWithLifecycle()
+    val modelsInstalled by vm.modelsInstalled.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val host = LocalHostActions.current
     val permissions = remember { PermissionManager(context) }
@@ -104,12 +103,19 @@ fun SettingsScreen(vm: JarvisViewModel) {
             Text("Nutqni tanish", color = Titanium300, fontSize = 13.sp)
             ChoiceRow(SttEngineChoice.entries.map { it to sttLabel(it) }, s.sttEngine) { vm.set(JarvisSettings.STT_ENGINE, it.name) }
             Spacer(Modifier.height(6.dp))
-            Text(if (voskInstalled) "Oflayn o'zbek modeli (Vosk) o'rnatilgan" else "Oflayn o'zbek modeli (Vosk, ~50 MB) yuklanmagan",
-                color = if (voskInstalled) SignalGreen else Titanium300, fontSize = 13.sp)
-            voskProgress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!voskInstalled) OutlinedButton(onClick = { vm.downloadVosk() }, enabled = voskProgress == null) { Text("Modelni yuklash") }
-                else OutlinedButton(onClick = { vm.deleteVosk() }) { Text("Modelni o'chirish") }
+            Text("Oflayn modellar", color = Titanium300, fontSize = 13.sp)
+            vm.offlineModels.forEach { (id, label, model) ->
+                val installed = modelsInstalled[id] == true
+                val progress by model.downloadProgress.collectAsStateWithLifecycle()
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, Modifier.weight(1f), color = if (installed) SignalGreen else MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                    if (!installed) TextButton(onClick = { vm.downloadModel(id) }, enabled = progress == null) { Text("Yuklash") }
+                    else TextButton(onClick = { vm.deleteModel(id) }) { Text("O'chirish") }
+                }
+                progress?.let { p -> LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) }
+            }
+            ToggleRow("Wi-Fi'da avtomatik yuklash", "Jarvis yoqilganda modellar o'zi yuklanadi", s.autoDownloadModels) {
+                vm.set(JarvisSettings.AUTO_DOWNLOAD_MODELS, it)
             }
             Spacer(Modifier.height(6.dp))
             Text("Jarvis ovozi tili", color = Titanium300, fontSize = 13.sp)
@@ -224,6 +230,7 @@ private val TIME_RE = Regex("""([01]\d|2[0-3]):[0-5]\d""")
 private fun wakeLabel(c: WakeEngineChoice) = when (c) {
     WakeEngineChoice.AUTO -> "Avto"
     WakeEngineChoice.PORCUPINE -> "Porcupine"
+    WakeEngineChoice.VOSK -> "Vosk \"Jarvis\""
     WakeEngineChoice.OPEN_WAKE_WORD -> "openWakeWord"
 }
 

@@ -28,6 +28,12 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE isCompleted = 0 AND hasReminder = 1 AND timestampMillis > :now")
     suspend fun getUpcomingWithReminder(now: Long): List<Task>
 
+    @Query("SELECT * FROM tasks WHERE isCompleted = 1 AND completedAt > 0 ORDER BY completedAt DESC LIMIT :limit")
+    suspend fun getCompleted(limit: Int = 500): List<Task>
+
+    @Query("SELECT * FROM tasks WHERE isCompleted = 0 AND deadline != '' AND deadline <= :date ORDER BY deadline ASC")
+    suspend fun getPendingWithDeadlineBy(date: String): List<Task>
+
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: Int): Task?
 

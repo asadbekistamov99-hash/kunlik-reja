@@ -45,7 +45,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.jarvis.voice.AssistantStatus
+import com.jarvis.voice.AssistantStatus
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.ArcBlue
 import com.example.ui.theme.ArcCyan

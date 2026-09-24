@@ -1,7 +1,7 @@
 package com.example.ui.navigation
 
 import androidx.compose.runtime.staticCompositionLocalOf
-import com.example.jarvis.security.JarvisCapability
+import com.jarvis.security.JarvisCapability
 
 /** Activity-level operations (permission dialogs, pickers, OAuth) exposed to composables. */
 interface HostActions {

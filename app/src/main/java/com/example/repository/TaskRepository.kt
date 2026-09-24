@@ -4,8 +4,8 @@ import com.example.data.Habit
 import com.example.data.HabitDao
 import com.example.data.Task
 import com.example.data.TaskDao
-import com.example.jarvis.automation.HabitEngine
-import com.example.jarvis.automation.ReminderEngine
+import com.jarvis.automation.HabitEngine
+import com.jarvis.automation.ReminderEngine
 import kotlinx.coroutines.flow.Flow
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -34,15 +34,20 @@ class TaskRepository(
     suspend fun getTaskById(id: Int): Task? = taskDao.getTaskById(id)
 
     suspend fun insertTask(task: Task): Task {
-        val id = taskDao.insertTask(task)
+        val id = taskDao.insertTask(if (task.isCompleted && task.completedAt == 0L) task.copy(completedAt = System.currentTimeMillis()) else task)
         val saved = task.copy(id = id.toInt())
         reminders.scheduleTask(saved)
         return saved
     }
 
     suspend fun updateTask(task: Task) {
-        taskDao.updateTask(task)
-        reminders.scheduleTask(task)
+        val stamped = when {
+            task.isCompleted && task.completedAt == 0L -> task.copy(completedAt = System.currentTimeMillis())
+            !task.isCompleted && task.completedAt != 0L -> task.copy(completedAt = 0)
+            else -> task
+        }
+        taskDao.updateTask(stamped)
+        reminders.scheduleTask(stamped)
     }
 
     suspend fun deleteTask(task: Task) {

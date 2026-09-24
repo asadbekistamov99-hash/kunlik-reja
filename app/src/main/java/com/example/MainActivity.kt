@@ -25,10 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import com.example.jarvis.AppContainer
-import com.example.jarvis.security.BiometricGate
-import com.example.jarvis.security.JarvisCapability
-import com.example.jarvis.settings.JarvisSettings
+import com.jarvis.AppContainer
+import com.jarvis.security.BiometricGate
+import com.jarvis.security.JarvisCapability
+import com.jarvis.settings.JarvisSettings
 import com.example.ui.components.HologramBackground
 import com.example.ui.components.JarvisOrb
 import com.example.ui.navigation.HostActions
@@ -38,7 +38,7 @@ import com.example.ui.theme.JarvisTheme
 import com.example.ui.viewmodel.JarvisViewModel
 import com.example.ui.viewmodel.TaskViewModel
 import com.example.ui.viewmodel.TaskViewModelFactory
-import com.example.jarvis.voice.AssistantStatus
+import com.jarvis.voice.AssistantStatus
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date

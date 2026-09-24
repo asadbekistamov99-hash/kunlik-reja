@@ -1,7 +1,7 @@
 package com.example
 
 import android.app.Application
-import com.example.jarvis.AppContainer
+import com.jarvis.AppContainer
 import com.example.notification.NotificationHelper
 
 open class JarvisApplication : Application() {

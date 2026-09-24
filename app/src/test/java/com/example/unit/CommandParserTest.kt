@@ -1,6 +1,6 @@
 package com.example.unit
 
-import com.example.jarvis.core.CommandParser
+import com.jarvis.core.CommandParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

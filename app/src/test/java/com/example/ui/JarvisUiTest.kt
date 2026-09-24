@@ -53,5 +53,15 @@ class JarvisUiTest {
             waitForTag(screen)
             rule.onRoot().captureRoboImage(filePath = "build/previews/$file.png")
         }
+
+        // Focus timer, habit tracker and export are reachable from the Tasks screen.
+        rule.onNodeWithTag("nav_tasks").performClick()
+        waitForTag("action_focus")
+        rule.onNodeWithTag("action_habits").assertIsDisplayed()
+        rule.onNodeWithTag("action_share").assertIsDisplayed()
+        rule.onNodeWithTag("action_copy").assertIsDisplayed()
+        rule.onNodeWithTag("action_focus").performClick()
+        rule.waitForIdle()
+        rule.onRoot().captureRoboImage(filePath = "build/previews/08-focus.png")
     }
 }

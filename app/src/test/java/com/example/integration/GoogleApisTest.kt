@@ -2,15 +2,15 @@ package com.example.integration
 
 import androidx.test.core.app.ApplicationProvider
 import com.example.TestJarvisApplication
-import com.example.jarvis.core.AgentContext
-import com.example.jarvis.core.GeminiAgent
-import com.example.jarvis.core.IntentType
-import com.example.jarvis.core.ResolvedIntent
-import com.example.jarvis.integrations.CalendarEvent
-import com.example.jarvis.integrations.Gmail
-import com.example.jarvis.integrations.GoogleApi
-import com.example.jarvis.integrations.GoogleApiException
-import com.example.jarvis.integrations.GoogleCalendar
+import com.jarvis.core.AgentContext
+import com.jarvis.core.GeminiAgent
+import com.jarvis.core.IntentType
+import com.jarvis.core.ResolvedIntent
+import com.jarvis.integrations.CalendarEvent
+import com.jarvis.integrations.GmailManager
+import com.jarvis.integrations.GoogleApi
+import com.jarvis.integrations.GoogleApiException
+import com.jarvis.integrations.CalendarManager
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -43,7 +43,7 @@ class GoogleApisTest {
     private fun api(token: String? = "tok") = GoogleApi(http) { token }
 
     @Test fun `calendar create list update delete over REST`() = runBlocking {
-        val cal = GoogleCalendar(ApplicationProvider.getApplicationContext(), api(), { true }, server.url("/cal").toString().trimEnd('/')) { zone }
+        val cal = CalendarManager(ApplicationProvider.getApplicationContext(), api(), { true }, server.url("/cal").toString().trimEnd('/')) { zone }
         server.enqueue(MockResponse().setBody("""{"id":"ev1","summary":"Uchrashuv","start":{"dateTime":"2026-09-24T09:00:00+05:00"},"end":{"dateTime":"2026-09-24T09:30:00+05:00"}}"""))
         val start = ZonedDateTime.of(2026, 9, 24, 9, 0, 0, 0, zone)
         val created = cal.create("Uchrashuv", start, start.plusMinutes(30))
@@ -77,7 +77,7 @@ class GoogleApisTest {
     }
 
     @Test fun `gmail unread draft and send`() = runBlocking {
-        val gmail = Gmail(api(), server.url("/gm").toString().trimEnd('/'))
+        val gmail = GmailManager(api(), server.url("/gm").toString().trimEnd('/'))
         server.enqueue(MockResponse().setBody("""{"messages":[{"id":"m1"}]}"""))
         server.enqueue(MockResponse().setBody("""{"id":"m1","snippet":"Hisobotni yubordim","payload":{"headers":[{"name":"From","value":"\"Ali\" <ali@x.uz>"},{"name":"Subject","value":"Hisobot"}]}}"""))
         val unread = gmail.unread()

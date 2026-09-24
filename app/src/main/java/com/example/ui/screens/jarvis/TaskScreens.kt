@@ -36,7 +36,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.Task
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Loop
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.ui.platform.LocalContext
 import com.example.ui.components.AddTaskBottomSheet
+import com.example.ui.components.FocusModeDialog
+import com.example.ui.components.HabitTrackerDialog
+import com.example.ui.components.ScheduleExportHelper
 import com.example.ui.components.GlassCard
 import com.example.ui.components.MetricTile
 import com.example.ui.components.SectionTitle
@@ -79,14 +90,15 @@ fun TaskEditorHost(viewModel: TaskViewModel, content: @Composable (onAdd: () -> 
             sheetState = sheetState,
             taskToEdit = editing,
             onDismiss = { showSheet = false; editing = null },
-            onSaveTask = { title, desc, cat, priority, dateStr, timeStr, duration, hasReminder, reminderMins, recurringType ->
+            onSaveTask = { title, desc, cat, priority, dateStr, timeStr, duration, hasReminder, reminderMins, recurringType, deadline ->
                 val current = editing
                 if (current == null) {
-                    viewModel.addTask(title, desc, cat, priority, dateStr, timeStr, duration, hasReminder, reminderMins, recurringType)
+                    viewModel.addTask(title, desc, cat, priority, dateStr, timeStr, duration, hasReminder, reminderMins, recurringType, deadline)
                 } else {
                     viewModel.updateTask(current.copy(title = title, description = desc, category = cat, priority = priority,
                         dateString = dateStr, timeString = timeStr, durationMinutes = duration, hasReminder = hasReminder,
-                        reminderMinutesBefore = reminderMins, timestampMillis = TaskViewModel.toMillis(dateStr, timeStr)))
+                        reminderMinutesBefore = reminderMins, timestampMillis = TaskViewModel.toMillis(dateStr, timeStr),
+                        deadline = deadline))
                 }
                 showSheet = false
                 editing = null
@@ -106,9 +118,66 @@ fun TaskEditorHost(viewModel: TaskViewModel, content: @Composable (onAdd: () -> 
 
 @Composable
 fun TasksScreen(viewModel: TaskViewModel) {
-    TaskEditorHost(viewModel) { _, onSelect ->
-        TaskListScreen(viewModel = viewModel, onEditTask = onSelect)
+    val context = LocalContext.current
+    val allTasks by viewModel.allTasks.collectAsStateWithLifecycle()
+    val habits by viewModel.allHabits.collectAsStateWithLifecycle()
+    val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
+    var showFocus by rememberSaveable { mutableStateOf(false) }
+    var showHabits by rememberSaveable { mutableStateOf(false) }
+    val dayTasks = allTasks.filter { it.dateString == selectedDate }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ToolChip("Fokus", Icons.Default.Timer, "action_focus") { showFocus = true }
+            ToolChip("Odatlar", Icons.Default.Loop, "action_habits") { showHabits = true }
+            ToolChip("Ulashish", Icons.Default.Share, "action_share") {
+                ScheduleExportHelper.shareScheduleText(context, selectedDate, dayTasks)
+            }
+            ToolChip("Nusxa", Icons.Default.ContentCopy, "action_copy") {
+                ScheduleExportHelper.copyScheduleToClipboard(context, selectedDate, dayTasks)
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            TaskEditorHost(viewModel) { _, onSelect ->
+                TaskListScreen(viewModel = viewModel, onEditTask = onSelect)
+            }
+        }
     }
+
+    if (showFocus) {
+        val today = com.example.repository.TaskRepository.getTodayDateString()
+        val pending = allTasks.filter { !it.isCompleted }
+        val focusTasks = pending.filter { it.dateString == today }.ifEmpty { pending }.sortedBy { it.timestampMillis }
+        FocusModeDialog(
+            tasks = focusTasks,
+            onDismiss = { showFocus = false },
+            onCompleteTask = { task -> if (!task.isCompleted) viewModel.toggleTaskCompletion(task) }
+        )
+    }
+    if (showHabits) {
+        HabitTrackerDialog(
+            habits = habits,
+            onDismiss = { showHabits = false },
+            onToggleHabit = { viewModel.toggleHabitForToday(it) },
+            onAddHabit = { viewModel.addHabit(it) },
+            onDeleteHabit = { viewModel.deleteHabit(it) }
+        )
+    }
+}
+
+@Composable
+private fun ToolChip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tag: String, onClick: () -> Unit) {
+    androidx.compose.material3.AssistChip(
+        onClick = onClick,
+        label = { Text(label) },
+        leadingIcon = { Icon(icon, null, tint = ArcCyan) },
+        modifier = Modifier.testTag(tag),
+        colors = androidx.compose.material3.AssistChipDefaults.assistChipColors(containerColor = Color(0x14FFFFFF),
+            labelColor = MaterialTheme.colorScheme.onSurface)
+    )
 }
 
 @Composable
@@ -167,6 +236,14 @@ fun StatisticsScreen(tasksVm: TaskViewModel, jarvis: JarvisViewModel) {
                 MetricTile("Xotira", "${memories.count { it.type != "COMMAND" }}", Modifier.weight(1f), HoloViolet)
                 MetricTile("Suhbatlar", "${conversation.size}", Modifier.weight(1f), ArcCyan)
                 MetricTile("Eslatmalar", "${reminders.count { it.isActive }}", Modifier.weight(1f), ReactorGold)
+            }
+        }
+        var patternsText by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(Unit) { jarvis.workPatternsText { patternsText = it } }
+        patternsText?.let { text ->
+            GlassCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("card_work_patterns"), glow = HoloViolet) {
+                SectionTitle("Ish odatlaringiz")
+                Text(text, color = Titanium300, fontSize = 13.sp)
             }
         }
         Box(Modifier.weight(1f)) { StatsAndNotificationsScreen(viewModel = tasksVm) }

@@ -92,7 +92,8 @@ fun AddTaskBottomSheet(
         durationMinutes: Int,
         hasReminder: Boolean,
         reminderMinutesBefore: Int,
-        recurringType: String
+        recurringType: String,
+        deadline: String
     ) -> Unit
 ) {
     val isEdit = taskToEdit != null
@@ -109,6 +110,8 @@ fun AddTaskBottomSheet(
     var selectedRecurring by remember { mutableStateOf(taskToEdit?.recurringType ?: "NONE") }
 
     var titleError by remember { mutableStateOf(false) }
+    var deadline by remember { mutableStateOf(taskToEdit?.deadline ?: "") }
+    val deadlineError = deadline.isNotBlank() && runCatching { java.time.LocalDate.parse(deadline.trim()) }.isFailure
 
     val quickTimes = listOf("08:00", "09:00", "10:30", "12:00", "14:00", "16:30", "18:00", "20:00")
     val durationOptions = listOf(15, 30, 45, 60, 90, 120)
@@ -232,6 +235,23 @@ fun AddTaskBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("input_task_desc")
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Optional deadline used by Jarvis' planner to prioritise work.
+            OutlinedTextField(
+                value = deadline,
+                onValueChange = { deadline = it },
+                label = { Text("Oxirgi muddat (ixtiyoriy)") },
+                placeholder = { Text("YYYY-MM-DD, masalan 2026-09-30") },
+                singleLine = true,
+                isError = deadlineError,
+                supportingText = { if (deadlineError) Text("Sana formati: YYYY-MM-DD") },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("input_task_deadline")
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -568,6 +588,7 @@ fun AddTaskBottomSheet(
                         titleError = true
                         return@Button
                     }
+                    if (deadlineError) return@Button
                     onSaveTask(
                         title.trim(),
                         description.trim(),
@@ -578,7 +599,8 @@ fun AddTaskBottomSheet(
                         durationMinutes,
                         hasReminder,
                         reminderMinutesBefore,
-                        selectedRecurring
+                        selectedRecurring,
+                        deadline.trim()
                     )
                 },
                 shape = RoundedCornerShape(12.dp),

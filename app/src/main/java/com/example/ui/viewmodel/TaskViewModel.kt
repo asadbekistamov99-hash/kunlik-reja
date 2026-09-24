@@ -143,7 +143,8 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
         durationMinutes: Int,
         hasReminder: Boolean,
         reminderMinutesBefore: Int,
-        recurringType: String = "NONE"
+        recurringType: String = "NONE",
+        deadline: String = ""
     ) {
         viewModelScope.launch {
             val dateSdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -185,7 +186,8 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
                     hasReminder = hasReminder,
                     reminderMinutesBefore = reminderMinutesBefore,
                     isRecurring = repeatCount > 1,
-                    recurringType = recurringType
+                    recurringType = recurringType,
+                    deadline = deadline
                 )
                 repository.insertTask(newTask)
             }

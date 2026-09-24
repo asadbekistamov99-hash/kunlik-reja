@@ -1,14 +1,14 @@
 package com.example.integration
 
-import com.example.jarvis.core.CalendarPort
-import com.example.jarvis.core.DeviceActions
-import com.example.jarvis.core.MailPort
-import com.example.jarvis.integrations.ActivityLauncher
-import com.example.jarvis.integrations.CalendarEvent
-import com.example.jarvis.integrations.ContactHit
-import com.example.jarvis.integrations.EmailSummary
-import com.example.jarvis.integrations.FileHit
-import com.example.jarvis.integrations.NotificationItem
+import com.jarvis.core.CalendarPort
+import com.jarvis.core.DeviceActions
+import com.jarvis.core.MailPort
+import com.jarvis.integrations.ActivityLauncher
+import com.jarvis.integrations.CalendarEvent
+import com.jarvis.integrations.ContactHit
+import com.jarvis.integrations.EmailSummary
+import com.jarvis.integrations.FileHit
+import com.jarvis.integrations.NotificationItem
 import java.time.LocalDate
 import java.time.ZonedDateTime
 
