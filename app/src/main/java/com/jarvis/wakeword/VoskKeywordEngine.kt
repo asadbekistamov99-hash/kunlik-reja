@@ -11,38 +11,44 @@ import org.vosk.Recognizer
  * so it can be unit-tested on the JVM.
  */
 class JarvisKeywordMatcher(private val minConfidence: Float) {
-    private var partialHits = 0
 
-    /** Partial hypotheses arrive every ~100 ms; two in a row avoids single-frame flukes. */
-    fun onPartial(json: String): Boolean {
-        val text = field(json, "partial")
-        partialHits = if (containsJarvis(text)) partialHits + 1 else 0
-        return partialHits >= 2
-    }
+    /**
+     * Confidence of the best "jarvis" word in a final Vosk result (requires setWords(true)),
+     * or null when "jarvis" was not recognised at all.
+     */
+    fun jarvisConfidence(json: String): Float? = WORD_RE.findAll(json)
+        .filter { it.groupValues[1] == KEYWORD }
+        .mapNotNull { CONF_RE.find(it.value)?.groupValues?.get(1)?.toFloatOrNull() }
+        .maxOrNull()
 
-    /** Final result of an utterance, with per-word confidences when available. */
-    fun onResult(json: String): Boolean {
-        val confidences = WORD_RE.findAll(json)
-            .filter { it.groupValues.any { g -> g == KEYWORD } }
-            .mapNotNull { CONF_RE.find(it.value)?.groupValues?.get(1)?.toFloatOrNull() }
-            .toList()
-        if (confidences.isNotEmpty()) return confidences.any { it >= minConfidence }
-        return containsJarvis(field(json, "text"))
-    }
-
-    fun reset() { partialHits = 0 }
+    /**
+     * Only final results with word confidences can trigger: partial hypotheses carry no
+     * confidence, and a grammar decoder will happily emit "jarvis" for similar-sounding speech.
+     */
+    fun onResult(json: String): Boolean = (jarvisConfidence(json) ?: 0f) >= minConfidence
 
     companion object {
         const val KEYWORD = "jarvis"
-        /** Vosk grammar: only "jarvis" or "unknown speech" can be recognised, which keeps decoding cheap and precise. */
-        const val GRAMMAR = """["jarvis", "[unk]"]"""
+
+        /**
+         * Keyword grammar with "filler" words: other speech is decoded as these competing words
+         * instead of being forced onto "jarvis" (the classic keyword-spotting garbage model).
+         * Includes near-homophones of "jarvis" so they are not mistaken for it.
+         */
+        val FILLERS = listOf(
+            "service", "harvest", "travis", "davis", "java", "jazz", "jar", "jars", "nervous", "garbage", "marvel",
+            "office", "purpose", "carve", "chaos", "charge", "choose", "just", "jobs", "joyous", "army", "far",
+            "hey", "hi", "hello", "good", "morning", "evening", "night", "how", "are", "you", "the", "a", "and",
+            "to", "is", "it", "yes", "no", "what", "time", "today", "tomorrow", "work", "call", "okay", "please",
+            "thank", "this", "that", "there", "here", "with", "for", "on", "in", "of", "at", "one", "two", "three",
+            "four", "five", "six", "seven", "eight", "nine", "ten", "go", "so", "do", "say", "see", "me", "my", "we",
+            "she", "he", "her", "his", "car", "bus", "house", "water", "music", "phone", "open", "close", "start",
+            "stop", "buy", "sell", "sir", "boss", "mister", "miss", "is", "was", "will", "can", "all", "our"
+        )
+        val GRAMMAR: String = (listOf(KEYWORD) + FILLERS.distinct() + "[unk]").joinToString(", ", "[", "]") { "\"$it\"" }
+
         private val WORD_RE = Regex("""\{[^{}]*"word"\s*:\s*"([^"]*)"[^{}]*\}""")
         private val CONF_RE = Regex(""""conf"\s*:\s*([0-9.]+)""")
-
-        fun field(json: String, name: String): String =
-            Regex(""""$name"\s*:\s*"([^"]*)"""").find(json)?.groupValues?.get(1).orEmpty()
-
-        fun containsJarvis(text: String) = text.split(' ').any { it == KEYWORD }
     }
 }
 
@@ -60,7 +66,7 @@ class VoskKeywordEngine(
     override val name = "Vosk"
     override val keywordLabel = "Jarvis"
     private val audio = AudioListener(context, frameSize = FRAME)
-    private val matcher = JarvisKeywordMatcher((0.95f - sensitivity * 0.5f).coerceIn(0.4f, 0.9f))
+    private val matcher = JarvisKeywordMatcher((0.98f - sensitivity * 0.3f).coerceIn(0.6f, 0.95f))
     private var recognizer: Recognizer? = null
     private var lastDetection = 0L
 
@@ -73,7 +79,6 @@ class VoskKeywordEngine(
             return
         }
         rec.reset()
-        matcher.reset()
         val preRoll = ArrayDeque<ShortArray>()
         var active = false
         var silent = 0
@@ -81,17 +86,15 @@ class VoskKeywordEngine(
 
         fun detected() {
             val now = SystemClock.elapsedRealtime()
-            rec.reset(); matcher.reset(); active = false; preRoll.clear()
+            rec.reset(); active = false; preRoll.clear()
             if (now - lastDetection > cooldownMs) {
                 lastDetection = now
                 onDetected()
             }
         }
 
-        fun feed(frame: ShortArray): Boolean {
-            val endpoint = rec.acceptWaveForm(frame, frame.size)
-            return if (endpoint) matcher.onResult(rec.result) else matcher.onPartial(rec.partialResult)
-        }
+        fun feed(frame: ShortArray): Boolean =
+            rec.acceptWaveForm(frame, frame.size) && matcher.onResult(rec.result)
 
         audio.start(
             onFrame = { frame ->
@@ -114,7 +117,7 @@ class VoskKeywordEngine(
                         if (feed(frame)) detected()
                         else if (silent >= END_SILENCE_FRAMES) {
                             if (matcher.onResult(rec.finalResult)) detected()
-                            rec.reset(); matcher.reset(); active = false
+                            rec.reset(); active = false
                         }
                     }
                 } catch (t: Throwable) {

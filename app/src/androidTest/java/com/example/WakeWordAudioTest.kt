@@ -68,21 +68,24 @@ class WakeWordAudioTest {
         val model = VoskModel(target, OkHttpClient(), "vosk/test-en", VoskModel.EN_URL, 40)
         assumeTrue("could not download the Vosk model", runBlocking { model.download() })
         val loaded = runBlocking { model.load() }
-        fun detects(pcm: ShortArray): Boolean {
-            val matcher = JarvisKeywordMatcher(0.6f)
+        val matcher = JarvisKeywordMatcher(0.8f)
+        /** Best "jarvis" confidence across the utterance's final results (0 when never recognised). */
+        fun confidence(pcm: ShortArray): Float {
             Recognizer(loaded, 16_000f, JarvisKeywordMatcher.GRAMMAR).use { rec ->
                 rec.setWords(true)
                 val audio = padded(pcm)
+                var best = 0f
                 var i = 0
                 while (i < audio.size) {
                     val chunk = audio.copyOfRange(i, minOf(audio.size, i + 1600))
-                    val hit = if (rec.acceptWaveForm(chunk, chunk.size)) matcher.onResult(rec.result) else matcher.onPartial(rec.partialResult)
-                    if (hit) return true
+                    if (rec.acceptWaveForm(chunk, chunk.size)) best = maxOf(best, matcher.jarvisConfidence(rec.result) ?: 0f)
                     i += 1600
                 }
-                return matcher.onResult(rec.finalResult)
+                return maxOf(best, matcher.jarvisConfidence(rec.finalResult) ?: 0f)
             }
         }
+        fun detects(pcm: ShortArray) = confidence(pcm) >= 0.8f
+        Log.i("WakeWordAudioTest", "vosk confidences: " + (positives + negatives).joinToString { (n, pcm) -> "$n=${confidence(pcm)}" })
         val pos = positives.map { (n, pcm) -> n to detects(pcm) }
         val neg = negatives.map { (n, pcm) -> n to detects(pcm) }
         Log.i("WakeWordAudioTest", "vosk positives=$pos negatives=$neg")
