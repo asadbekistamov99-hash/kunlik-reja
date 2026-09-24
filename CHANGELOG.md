@@ -14,7 +14,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - **Focus timer, habit tracker and schedule export** (share / copy) are reachable from the Tasks screen. They existed in the code before but were never connected to any screen.
 
 ### Verified
-- CI: debug and R8 release builds and lint pass. 95 JVM + Robolectric tests pass (unit, integration on SDK 31/33/34/35, Compose UI).
+- CI: debug and R8 release builds and lint pass. all 92 JVM + Robolectric test runs pass (83 test methods: unit, integration, Compose UI; the reboot/background suite runs on SDK 31, 33, 34 and 35).
 - Emulators on Android 12, 13, 14 and 15 each run 9 instrumented tests, all passing with none skipped. Besides the 1.0 coverage, this now includes automatic background restart with the overlay permission, the focus-timer dialog, and **both offline wake-word engines fed real synthesized audio**. openWakeWord detects "hey jarvis" clips, and Vosk detects single-word "jarvis" clips. Neither triggers on "hello world", "good morning, how are you", "customer service" or Uzbek speech.
 - Found and fixed by these tests: the first Vosk grammar (`jarvis` + `[unk]` only) produced false positives on 3 of 4 negative phrases. Filler words and confidence gating removed them.
 
