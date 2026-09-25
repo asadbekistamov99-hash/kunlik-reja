@@ -12,7 +12,8 @@ The `.aab` file is for Google Play upload only. You can't install it directly.
 
 ## 2. First launch
 
-1. Tap **Jarvisni yoqish** on the dashboard and allow **Microphone** and **Notifications**.
+1. On first launch Jarvis switches itself on and asks once for **Microphone** and **Notifications**. Allow both.
+   (If you declined, tap **Jarvisni yoqish** on the dashboard later.) Pick **Erkak/Ayol** (male/female) for Jarvis' voice on the same card.
 2. A persistent "Jarvis Ultra" notification appears. Jarvis is now listening for its wake word offline.
    - On the first Wi-Fi connection Jarvis downloads its offline models (about 90 MB total). After that the wake word is simply **"Jarvis"**, with no key and no internet needed.
    - Until then, the bundled **"Hey Jarvis"** model is used.
@@ -25,6 +26,13 @@ The `.aab` file is for Google Play upload only. You can't install it directly.
    - **Boshqa ilovalar ustida** (display over other apps) lets Jarvis restart **automatically** after a reboot on Android 14–15, and open the camera or dialer while locked.
 4. For OEM phones (Xiaomi, Samsung, Huawei, Oppo), also enable **Autostart** and set the battery mode to
    **No restrictions** for Jarvis Ultra in the system settings.
+
+## 2b. Using Jarvis without opening the app
+
+- Say **"Hey Jarvis"** (or just **"Jarvis"** once the offline model is downloaded), even with the screen locked.
+- Optional: **Settings → Jarvis 24/7 → Standart yordamchi qilish** and choose Jarvis as the digital assistant app.
+  Then a long press of the power/home button (or a headset's voice button) starts Jarvis.
+- Optional: add the **Jarvis** tile to Quick Settings (pull down the notification shade → edit tiles).
 
 ## 3. Offline models
 
