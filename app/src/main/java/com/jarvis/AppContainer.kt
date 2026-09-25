@@ -40,6 +40,8 @@ import com.jarvis.settings.JarvisSettings
 import com.jarvis.voice.AndroidSpeechToText
 import com.jarvis.voice.NetworkMonitor
 import com.jarvis.voice.SpeechToTextRouter
+import com.jarvis.voice.GeminiVoice
+import com.jarvis.voice.OpenAiVoice
 import com.jarvis.voice.TextToSpeechManager
 import com.jarvis.voice.VoiceSession
 import com.jarvis.voice.VoskModel
@@ -137,7 +139,12 @@ class AppContainer(
         )
     }
 
-    val tts by lazy { TextToSpeechManager(context) }
+    val tts by lazy {
+        TextToSpeechManager(context, listOf(
+            GeminiVoice(http, { apiKey(SecureStore.GEMINI_API_KEY, BuildConfig.GEMINI_API_KEY, "MY_GEMINI_API_KEY") }, network::isOnline),
+            OpenAiVoice(http, { apiKey(SecureStore.OPENAI_API_KEY, BuildConfig.OPENAI_API_KEY, "MY_OPENAI_API_KEY") }, network::isOnline)
+        ))
+    }
     /** Offline Uzbek speech recognition model. */
     val voskUzModel by lazy { VoskModel(context, http, "vosk/model-uz", VoskModel.UZ_URL, 50) }
     /** Offline English model used only for grammar-restricted "Jarvis" keyword spotting. */
@@ -158,7 +165,7 @@ class AppContainer(
     /** Long-running wiring that should live as long as the process. */
     fun start() {
         appScope.launch {
-            settings.state.collect { s -> tts.configure(s.ttsLanguage, s.ttsRate) }
+            settings.state.collect { s -> tts.configure(s.ttsLanguage, s.ttsRate, s.voiceGender, s.ttsEngine) }
         }
         appScope.launch {
             settings.state.map { it.assistantEnabled && it.autoDownloadModels }.distinctUntilChanged()
@@ -195,7 +202,7 @@ class AppContainer(
         val s = settings.state.first()
         if (!s.speakReminders || voice.isBusy) return
         withContext(Dispatchers.Main) {
-            tts.configure(s.ttsLanguage, s.ttsRate)
+            tts.configure(s.ttsLanguage, s.ttsRate, s.voiceGender, s.ttsEngine)
             tts.speak(text)
         }
     }

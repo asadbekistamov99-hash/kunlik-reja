@@ -42,8 +42,8 @@ class JarvisEngine(
         history.addUser(trimmed)
 
         val response = followUp(parsed) ?: run {
-            val intent = decide(parsed)
-            executor.execute(intent, parsed)
+            val (intent, understood) = decide(parsed)
+            executor.execute(intent, understood)
         }
         history.addAssistant(response.text, response.intent.name)
         if (response.intent != IntentType.UNKNOWN) runCatching { memory.logCommand(response.intent.name, trimmed) }
@@ -90,19 +90,46 @@ class JarvisEngine(
         return null
     }
 
-    private suspend fun decide(parsed: ParsedCommand): ResolvedIntent {
-        val offline = resolver.resolve(parsed)
-        if (offline.type in LOCAL_ONLY) return offline
+    /**
+     * Offline understanding with one repair pass: if the first reading is not confident, misheard
+     * words are snapped to the command vocabulary and the better reading wins.
+     */
+    fun understand(parsed: ParsedCommand): Pair<ResolvedIntent, ParsedCommand> {
+        val first = resolver.resolve(parsed)
+        if (first.confidence >= CONFIDENT) return first to parsed
+        val corrected = SpellCorrector.correct(parsed.normalized)
+        if (corrected == parsed.normalized) return first to parsed
+        val reparsed = parser.parse(corrected)
+        val second = resolver.resolve(reparsed)
+        return if (second.confidence > first.confidence) second to reparsed else first to parsed
+    }
+
+    /** How well Jarvis understands [text] offline, 0..1 — used to pick among recognizer alternatives. */
+    fun understandingScore(text: String): Float = understand(parser.parse(text)).first.confidence
+
+    /**
+     * Speech recognizers return several guesses; pick the one Jarvis understands best. Earlier
+     * (more likely) guesses win ties.
+     */
+    fun bestTranscript(alternatives: List<String>): String? =
+        alternatives.filter { it.isNotBlank() }
+            .withIndex()
+            .maxByOrNull { (i, text) -> understandingScore(text) - i * 0.01f }
+            ?.value
+
+    private suspend fun decide(parsed: ParsedCommand): Pair<ResolvedIntent, ParsedCommand> {
+        val (offline, understood) = understand(parsed)
+        if (offline.type in LOCAL_ONLY) return offline to understood
         val mode = settings().aiMode
         val agentReady = agent != null && mode != AiMode.OFFLINE_ONLY && agent.isAvailable()
-        if (!agentReady) return offline
+        if (!agentReady) return offline to understood
         val useAgent = mode == AiMode.CLOUD_FIRST || offline.confidence < CONFIDENT
-        if (!useAgent) return offline
+        if (!useAgent) return offline to understood
         val decided = agent!!.decide(parsed.body.ifBlank { parsed.original }, agentContext())
         return when {
-            decided == null -> offline
+            decided == null -> offline to understood
             // Keep the deterministic parse for dates/times the model may have left out.
-            else -> decided.copy(slots = offline.slots.filterKeys { it == ResolvedIntent.DATE || it == ResolvedIntent.TIME } + decided.slots)
+            else -> decided.copy(slots = offline.slots.filterKeys { it == ResolvedIntent.DATE || it == ResolvedIntent.TIME } + decided.slots) to understood
         }
     }
 

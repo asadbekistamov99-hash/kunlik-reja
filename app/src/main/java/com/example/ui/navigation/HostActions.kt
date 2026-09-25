@@ -12,6 +12,8 @@ interface HostActions {
     fun exportBackup(password: CharArray)
     fun importBackup(password: CharArray)
     fun openAppSettings()
+    /** Opens the system "Default apps" page where Jarvis can be picked as the digital assistant. */
+    fun openAssistantSettings()
 }
 
 val LocalHostActions = staticCompositionLocalOf<HostActions> { error("HostActions not provided") }

@@ -104,12 +104,17 @@ class JarvisViewModel(private val container: AppContainer) : ViewModel() {
 
     fun applyVoiceSettings() {
         val s = settings.value
-        container.tts.configure(s.ttsLanguage, s.ttsRate)
+        container.tts.configure(s.ttsLanguage, s.ttsRate, s.voiceGender, s.ttsEngine)
     }
 
     fun testVoice() = viewModelScope.launch {
         applyVoiceSettings()
-        container.tts.speak("Salom! Men Jarvisman. Sizga qanday yordam bera olaman?")
+        container.tts.speak("Assalomu alaykum! Men Jarvisman. Bugun sizga nima yordam bera olaman? Rejalaringizni birga tuzamizmi?")
+        message("Ovoz: " + when (container.tts.lastEngine) {
+            "gemini" -> "Gemini neyron ovozi"
+            "openai" -> "OpenAI neyron ovozi"
+            else -> "qurilma ovozi ${container.tts.activeVoiceName}".trim()
+        })
     }
 
     fun downloadModel(id: String) = viewModelScope.launch {

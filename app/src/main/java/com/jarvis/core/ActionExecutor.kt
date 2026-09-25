@@ -35,7 +35,8 @@ class ActionExecutor(
     private val mail: MailPort,
     private val patterns: com.jarvis.automation.WorkPatternService? = null,
     private val clock: () -> LocalDateTime = { LocalDateTime.now() },
-    private val zone: () -> ZoneId = { ZoneId.systemDefault() }
+    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    private val random: kotlin.random.Random = kotlin.random.Random.Default
 ) {
 
     suspend fun execute(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
@@ -48,7 +49,7 @@ class ActionExecutor(
     }
 
     private suspend fun dispatch(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse = when (intent.type) {
-        IntentType.WAKE -> JarvisResponse("Labbay, eshitaman.", intent.type, expectsReply = true)
+        IntentType.WAKE -> JarvisResponse(pick("Labbay, eshitaman.", "Ha, xizmatingizdaman.", "Eshitaman, gapiring."), intent.type, expectsReply = true)
         IntentType.START_SESSION -> {
             context.sessionActive = true
             JarvisResponse("Suhbat rejimi yoqildi. Men sizni tinglayapman.", intent.type, startSession = true, expectsReply = true)
@@ -56,7 +57,8 @@ class ActionExecutor(
         IntentType.STOP_SESSION -> {
             context.sessionActive = false
             context.clear()
-            JarvisResponse("Xo'p. Kerak bo'lsam, \"Jarvis\" deb chaqiring.", intent.type, endSession = true)
+            JarvisResponse(pick("Xo'p. Kerak bo'lsam, \"Jarvis\" deb chaqiring.", "Mayli, dam oling. Kerak bo'lsam shu yerdaman.",
+                "Tushunarli. \"Hey Jarvis\" desangiz, darrov javob beraman."), intent.type, endSession = true)
         }
         IntentType.ADD_TASK -> addTask(intent)
         IntentType.COMPLETE_TASK -> completeTask(intent, parsed)
@@ -83,10 +85,13 @@ class ActionExecutor(
         IntentType.WORK_PATTERNS -> workPatterns(intent)
         IntentType.TIME_QUERY -> JarvisResponse(timeAnswer(), intent.type)
         IntentType.GREETING -> greeting(intent)
-        IntentType.THANKS -> JarvisResponse("Arzimaydi! Yana nima yordam kerak?", intent.type)
+        IntentType.THANKS -> JarvisResponse(pick("Arzimaydi! Yana nima yordam kerak?", "Doim xizmatingizdaman!",
+            "Marhamat! Yana biror narsa bo'lsa, aytavering."), intent.type)
         IntentType.HELP -> JarvisResponse(HELP_TEXT, intent.type, card = ResponseCard("Buyruqlar", HELP_EXAMPLES))
         IntentType.UNKNOWN -> intent.slot(ResolvedIntent.ANSWER)?.let { JarvisResponse(it, intent.type) }
-            ?: JarvisResponse("Kechirasiz, tushunmadim. \"Jarvis, yordam\" deb so'rasangiz, imkoniyatlarimni aytib beraman.", intent.type, success = false)
+            ?: JarvisResponse(pick("Kechirasiz, tushunmadim. Boshqacharoq aytib ko'ra olasizmi?",
+                "Buni to'liq anglay olmadim. \"Jarvis, yordam\" desangiz, nima qila olishimni aytib beraman.",
+                "Uzr, yana bir bor aytib bera olasizmi?"), intent.type, success = false)
     }
 
     /** Runs a previously confirmed action (the user said "ha"). */
@@ -493,6 +498,8 @@ class ActionExecutor(
         val now = clock()
         return "Soat ${now.toLocalTime().format(HHMM)}. Bugun ${now.dayOfMonth}-${MONTHS[now.monthValue - 1]}, ${WEEKDAYS[now.dayOfWeek.value - 1]}."
     }
+
+    private fun pick(vararg options: String): String = options[random.nextInt(options.size)]
 
     private fun askFor(intent: ResolvedIntent, slot: String, question: String): JarvisResponse {
         context.pendingIntent = intent

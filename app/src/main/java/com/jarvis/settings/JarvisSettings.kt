@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.stateIn
 enum class AiMode { HYBRID, OFFLINE_ONLY, CLOUD_FIRST }
 enum class WakeEngineChoice { AUTO, PORCUPINE, VOSK, OPEN_WAKE_WORD }
 enum class SttEngineChoice { AUTO, GOOGLE, WHISPER, VOSK }
+enum class VoiceGender { MALE, FEMALE }
+/** Who speaks Jarvis' replies: neural cloud voices sound natural; the device voice always works offline. */
+enum class TtsEngineChoice { AUTO, DEVICE, GEMINI, OPENAI }
 
 /** Immutable view of all user settings; defaults apply for keys never written. */
 data class SettingsSnapshot(
@@ -34,7 +37,9 @@ data class SettingsSnapshot(
     val fileTreeUris: List<String> = emptyList(),
     val onboardingDone: Boolean = false,
     /** Download the offline Vosk models automatically on Wi-Fi/unmetered networks. */
-    val autoDownloadModels: Boolean = true
+    val autoDownloadModels: Boolean = true,
+    val voiceGender: VoiceGender = VoiceGender.MALE,
+    val ttsEngine: TtsEngineChoice = TtsEngineChoice.AUTO
 )
 
 class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
@@ -72,6 +77,8 @@ class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
         const val AUTO_DOWNLOAD_MODELS = "auto_download_models"
         /** Bumped whenever an offline model is installed/removed so listeners rebuild engines. */
         const val MODELS_REV = "models_rev"
+        const val VOICE_GENDER = "voice_gender"
+        const val TTS_ENGINE = "tts_engine"
 
         fun parse(map: Map<String, String>): SettingsSnapshot {
             val d = SettingsSnapshot()
@@ -97,7 +104,9 @@ class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
                 userName = map[USER_NAME] ?: d.userName,
                 fileTreeUris = map[FILE_TREES]?.split("\n")?.filter { it.isNotBlank() } ?: d.fileTreeUris,
                 onboardingDone = bool(ONBOARDING_DONE, d.onboardingDone),
-                autoDownloadModels = bool(AUTO_DOWNLOAD_MODELS, d.autoDownloadModels)
+                autoDownloadModels = bool(AUTO_DOWNLOAD_MODELS, d.autoDownloadModels),
+                voiceGender = map[VOICE_GENDER]?.let { runCatching { VoiceGender.valueOf(it) }.getOrNull() } ?: d.voiceGender,
+                ttsEngine = map[TTS_ENGINE]?.let { runCatching { TtsEngineChoice.valueOf(it) }.getOrNull() } ?: d.ttsEngine
             )
         }
 

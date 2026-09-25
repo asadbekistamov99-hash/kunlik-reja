@@ -31,6 +31,9 @@ class JarvisUiTest {
         waitForTag("screen_dashboard")
         rule.onNodeWithTag("jarvis_orb").assertIsDisplayed()
         rule.onNodeWithTag("card_enable_assistant").assertIsDisplayed()
+        rule.onNodeWithTag("dashboard_logo").assertIsDisplayed()
+        rule.onNodeWithTag("chip_voice_male").assertIsDisplayed()
+        rule.onNodeWithTag("chip_voice_female").performClick()
         rule.onRoot().captureRoboImage(filePath = "build/previews/01-dashboard.png")
 
         rule.onNodeWithTag("nav_assistant").performClick()

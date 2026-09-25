@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
@@ -30,7 +31,6 @@ import com.jarvis.security.BiometricGate
 import com.jarvis.security.JarvisCapability
 import com.jarvis.settings.JarvisSettings
 import com.example.ui.components.HologramBackground
-import com.example.ui.components.JarvisOrb
 import com.example.ui.navigation.HostActions
 import com.example.ui.navigation.JarvisApp
 import com.example.ui.navigation.LocalHostActions
@@ -38,7 +38,6 @@ import com.example.ui.theme.JarvisTheme
 import com.example.ui.viewmodel.JarvisViewModel
 import com.example.ui.viewmodel.TaskViewModel
 import com.example.ui.viewmodel.TaskViewModelFactory
-import com.jarvis.voice.AssistantStatus
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -102,6 +101,9 @@ class MainActivity : FragmentActivity(), HostActions {
             ready = true
             if (locked) unlock()
             jarvis.ensureServiceState(this@MainActivity)
+            // First launch: switch the 24/7 assistant on right away, so "Hey Jarvis" works from
+            // then on without ever opening the app again.
+            if (!s.onboardingDone && !s.assistantEnabled && !locked) enableAssistant()
         }
 
         setContent {
@@ -148,7 +150,11 @@ class MainActivity : FragmentActivity(), HostActions {
     private fun LockScreen() {
         HologramBackground {
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                JarvisOrb(AssistantStatus.PAUSED, 0f, size = 160.dp)
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(R.drawable.jarvis_logo),
+                    contentDescription = "Jarvis Ultra",
+                    modifier = Modifier.size(160.dp)
+                )
                 Spacer(Modifier.height(24.dp))
                 Text("Jarvis Ultra qulflangan")
                 Spacer(Modifier.height(12.dp))
@@ -202,6 +208,15 @@ class MainActivity : FragmentActivity(), HostActions {
     override fun importBackup(password: CharArray) {
         pendingBackupPassword = password
         importLauncher.launch(arrayOf("*/*"))
+    }
+
+    override fun openAssistantSettings() {
+        val intents = listOf(
+            android.content.Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS),
+            android.content.Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+        )
+        intents.firstOrNull { runCatching { startActivity(it) }.isSuccess }
+            ?: jarvis.message("Sozlamalar ochilmadi. Tizim sozlamalari → Ilovalar → Standart ilovalar → Raqamli yordamchi")
     }
 
     override fun openAppSettings() {

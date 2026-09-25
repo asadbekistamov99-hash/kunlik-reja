@@ -187,7 +187,7 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
         )
 
         private val NUMBER_WORDS = mapOf(
-            "bir" to 1, "ikki" to 2, "uch" to 3, "to'rt" to 4, "besh" to 5, "olti" to 6, "yetti" to 7,
+            "bir" to 1, "ikki" to 2, "on" to 10, "uch" to 3, "to'rt" to 4, "besh" to 5, "olti" to 6, "yetti" to 7,
             "sakkiz" to 8, "to'qqiz" to 9, "o'n" to 10, "yigirma" to 20, "o'ttiz" to 30, "qirq" to 40,
             "ellik" to 50, "oltmish" to 60
         )
@@ -205,7 +205,31 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
             }
             // Trailing sentence dots are noise; keep dots inside tokens (times, emails, file names).
             val cleaned = sb.toString().replace(Regex("""(?<![\w@])[.\-/]|[.\-/](?![\w])"""), " ")
-            return wordsToNumbers(cleaned.replace(SPACES, " ").trim())
+            return wordsToNumbers(restoreApostrophes(cleaned.replace(SPACES, " ").trim()))
+        }
+
+        /**
+         * Speech recognizers often drop the o'/g' apostrophe ("qosh", "ochir", "korsat"); restore it
+         * for the words Jarvis' commands depend on. Only unambiguous stems are listed.
+         */
+        private val APOSTROPHE_FIXES = listOf(
+            "qosh" to "qo'sh", "ochir" to "o'chir", "korsat" to "ko'rsat", "boglan" to "bog'lan",
+            "qongiroq" to "qo'ng'iroq", "qo'ngiroq" to "qo'ng'iroq", "qongiroq" to "qo'ng'iroq", "toxta" to "to'xta",
+            "togri" to "to'g'ri", "xop" to "xo'p", "bopti" to "bo'pti", "ozgartir" to "o'zgartir", "kochir" to "ko'chir",
+            "yigilish" to "yig'ilish", "toqqiz" to "to'qqiz", "tort" to "to'rt", "ottiz" to "o'ttiz", "qoy" to "qo'y",
+            "oqi" to "o'qi", "otib" to "o'tib", "song" to "so'ng", "yoqot" to "yo'qot", "yoq qil" to "yo'q qil",
+            "tugallanmagan" to "tugallanmagan", "shogird" to "shogird", "oylab" to "o'ylab", "ozim" to "o'zim",
+            "kerak emas" to "kerak emas", "yodingda" to "yodingda", "ogoh" to "ogoh", "boldi" to "bo'ldi",
+            "bolsin" to "bo'lsin", "qilmagan" to "qilmagan", "ertagi" to "ertangi", "bugungi" to "bugungi"
+        ).filter { it.first != it.second }
+        private val APOSTROPHE_RES = APOSTROPHE_FIXES.map { (from, to) -> Regex("""\b$from(?=\w*)""") to to }
+
+        fun restoreApostrophes(text: String): String {
+            var out = text
+            for ((re, to) in APOSTROPHE_RES) out = out.replace(re, to)
+            // "yoq" alone is ambiguous (yo'q = no, yoq = switch on); only fix it as a standalone answer.
+            if (out == "yoq") out = "yo'q"
+            return out
         }
 
         private fun wordsToNumbers(text: String): String {
@@ -232,7 +256,7 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
             return out.joinToString(" ")
         }
 
-        private val WAKE_RE = Regex("""^(?:hey |hi |ey |salom )?(?:jarvis|jarviz|djarvis|jarvis's|jervis)\b[,\s]*""")
+        private val WAKE_RE = Regex("""^(?:hey |hi |ey |xey |hay |he |salom )?(?:jarvis|jarviz|djarvis|jarvis's|jervis|jarvas|jarves|charvis|jarbis|javis|jarvi|jarvisga)\b[,\s]*""")
 
         fun stripWakeWord(normalized: String): Pair<String, Boolean> {
             val m = WAKE_RE.find(normalized) ?: return normalized to false

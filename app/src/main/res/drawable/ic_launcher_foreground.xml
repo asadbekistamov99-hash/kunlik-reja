@@ -1,22 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- outer holographic ring -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FF3FE0FF"
-        android:strokeWidth="2.5"
-        android:pathData="M54,30A24,24 0 1,1 53.99,30Z" />
-    <!-- inner ring -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#992D8CFF"
-        android:strokeWidth="1.5"
-        android:pathData="M54,37A17,17 0 1,1 53.99,37Z" />
-    <!-- reactor core -->
-    <path android:fillColor="#FF3FE0FF" android:pathData="M54,45A9,9 0 1,0 54,63A9,9 0 1,0 54,45Z" />
-    <path android:fillColor="#FFFFFFFF" android:pathData="M54,49A5,5 0 1,0 54,59A5,5 0 1,0 54,49Z" />
-</vector>
+<!-- Jarvis Ultra logo scaled into the adaptive-icon viewport (108dp canvas, ~72dp visible).
+     A 16dp inset keeps the logo's own outer glow just outside the launcher mask. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/jarvis_logo"
+    android:inset="16dp" />

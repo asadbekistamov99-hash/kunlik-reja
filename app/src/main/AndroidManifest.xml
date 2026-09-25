@@ -77,6 +77,35 @@
         </activity>
 
         <activity
+            android:name="com.jarvis.service.AssistActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Jarvis.Invisible">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="com.jarvis.service.JarvisTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_jarvis"
+            android:label="Jarvis"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <activity
             android:name="com.jarvis.service.ServiceStarterActivity"
             android:exported="false"
             android:excludeFromRecents="true"

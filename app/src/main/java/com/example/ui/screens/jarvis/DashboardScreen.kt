@@ -1,6 +1,15 @@
 package com.example.ui.screens.jarvis
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import com.example.R
+import com.jarvis.settings.JarvisSettings
+import com.jarvis.settings.VoiceGender
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,10 +96,20 @@ fun DashboardScreen(
             .testTag("screen_dashboard")
     ) {
         Spacer(Modifier.height(8.dp))
-        Text("${date.dayOfMonth}-${ActionExecutor.MONTHS[date.monthValue - 1]}, ${ActionExecutor.WEEKDAYS[date.dayOfWeek.value - 1]}".uppercase(),
-            color = ArcCyan.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
-        Text("$salute${if (settings.userName.isNotBlank()) ", ${settings.userName}" else ""}",
-            style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painter = painterResource(R.drawable.jarvis_logo),
+                contentDescription = "Jarvis Ultra",
+                modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).testTag("dashboard_logo")
+            )
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("${date.dayOfMonth}-${ActionExecutor.MONTHS[date.monthValue - 1]}, ${ActionExecutor.WEEKDAYS[date.dayOfWeek.value - 1]}".uppercase(),
+                    color = ArcCyan.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall)
+                Text("$salute${if (settings.userName.isNotBlank()) ", ${settings.userName}" else ""}",
+                    style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground)
+            }
+        }
 
         Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -103,8 +122,19 @@ fun DashboardScreen(
         if (!settings.assistantEnabled) {
             GlassCard(Modifier.fillMaxWidth().testTag("card_enable_assistant"), glow = ReactorGold) {
                 Text("24/7 Jarvis o'chiq", fontWeight = FontWeight.SemiBold, color = ReactorGold)
-                Text("Yoqilsa, ilova yopiq va ekran qulflangan bo'lsa ham \"Jarvis\" so'zini oflayn eshitadi.",
+                Text("Yoqilsa, ilova yopiq va ekran qulflangan bo'lsa ham \"Hey Jarvis\" deyishingiz bilan eshitadi — ilovani ochish shart emas.",
                     color = Titanium300, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ovoz:", color = Titanium300, fontSize = 13.sp)
+                    listOf(VoiceGender.MALE to "Erkak", VoiceGender.FEMALE to "Ayol").forEach { (g, label) ->
+                        androidx.compose.material3.FilterChip(
+                            selected = settings.voiceGender == g,
+                            onClick = { jarvis.set(JarvisSettings.VOICE_GENDER, g.name) },
+                            label = { Text(label) },
+                            modifier = Modifier.testTag("chip_voice_${g.name.lowercase()}")
+                        )
+                    }
+                }
                 Button(onClick = { host.enableAssistant() },
                     colors = ButtonDefaults.buttonColors(containerColor = ReactorGold, contentColor = Color.Black)) {
                     Icon(Icons.Default.PowerSettingsNew, null)

@@ -28,7 +28,9 @@ data class VoiceUiState(
     val sessionActive: Boolean = false,
     val wakeEngine: String = "",
     val wakeKeyword: String = "",
-    val sttEngine: String = ""
+    val sttEngine: String = "",
+    /** Number of listening turns started since launch (observable proof a wake/assist trigger worked). */
+    val listenCount: Int = 0
 )
 
 /** Implemented by the foreground service, which owns the wake-word microphone. */
@@ -110,14 +112,17 @@ class VoiceSession(
         var silentTurns = 0
         var turns = 0
         while (turns < MAX_TURNS) {
-            _state.update { it.copy(status = AssistantStatus.LISTENING, partial = "", error = null, level = 0f) }
+            _state.update { it.copy(status = AssistantStatus.LISTENING, partial = "", error = null, level = 0f, listenCount = it.listenCount + 1) }
             val text = try {
+                var alts: List<String> = emptyList()
                 val (heard, engineId) = stt.listen(object : SttEvents {
                     override fun onPartial(text: String) = _state.update { it.copy(partial = text) }
                     override fun onLevel(level: Float) = _state.update { it.copy(level = level) }
+                    override fun onAlternatives(alternatives: List<String>) { alts = alternatives }
                 })
                 _state.update { it.copy(sttEngine = engineId) }
-                heard
+                // Of the recognizer's guesses, act on the one Jarvis understands best.
+                if (alts.size > 1) engine.bestTranscript(alts) ?: heard else heard
             } catch (e: CancellationException) {
                 throw e
             } catch (e: SttException) {

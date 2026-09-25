@@ -35,6 +35,8 @@ interface SttEvents {
     fun onPartial(text: String) {}
     /** Normalized input level 0..1 for the waveform. */
     fun onLevel(level: Float) {}
+    /** All candidate transcripts, most likely first (when the engine provides them). */
+    fun onAlternatives(alternatives: List<String>) {}
 }
 
 interface SpeechToText {
@@ -77,13 +79,16 @@ class AndroidSpeechToText(private val context: Context, private val online: () -
                             ?.takeIf { it.isNotBlank() }?.let(events::onPartial)
                     }
                     override fun onResults(results: Bundle?) {
-                        val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                        done { cont.resume(text?.takeIf { it.isNotBlank() }) }
+                        val all = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty().filter { it.isNotBlank() }
+                        if (all.size > 1) events.onAlternatives(all)
+                        done { cont.resume(all.firstOrNull()) }
                     }
                     override fun onError(error: Int) {
                         when (error) {
                             SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> done { cont.resume(null) }
-                            else -> done { cont.resumeWithException(SttException(describe(error), recoverable = error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)) }
+                            // Recoverable: the router falls back to the in-process Vosk recognizer, which
+                            // also covers recognition services that refuse background callers.
+                            else -> done { cont.resumeWithException(SttException(describe(error), recoverable = true)) }
                         }
                     }
                 })
@@ -92,7 +97,14 @@ class AndroidSpeechToText(private val context: Context, private val online: () -
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uz-UZ")
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "uz-UZ")
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                    // Don't cut the user off during natural pauses in longer commands.
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 800L)
+                    if (android.os.Build.VERSION.SDK_INT >= 33) {
+                        putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, BIASING_PHRASES)
+                    }
                     putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                     if (offline) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
                 }
@@ -102,6 +114,14 @@ class AndroidSpeechToText(private val context: Context, private val online: () -
                 }
             }
         }
+    }
+
+    private companion object {
+        /** Command words the recognizer should favour (used by on-device recognizers, API 33+). */
+        val BIASING_PHRASES = arrayListOf(
+            "Jarvis", "qo'sh", "rejani tuz", "tugallanmagan", "ko'rsat", "eslat", "o'chir", "ko'chir", "bog'lan",
+            "qo'ng'iroq", "kamera och", "fayl top", "bildirishnoma", "taqvim", "xat yubor", "eslab qol", "boshla", "tugat"
+        )
     }
 
     private fun describe(error: Int) = when (error) {

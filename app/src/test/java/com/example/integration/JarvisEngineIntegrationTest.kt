@@ -261,6 +261,15 @@ class JarvisEngineIntegrationTest {
         assertTrue(memory.byType(MemoryType.PATTERN).isNotEmpty())
     }
 
+    @Test fun `best recognizer alternative is chosen and misheard words are repaired`() = runBlocking {
+        assertEquals("Jarvis bugungi rejani tuz",
+            engine.bestTranscript(listOf("Jarvis bu gun gi re jani", "Jarvis bugungi rejani tuz", "")))
+        // Apostrophe-less and misheard input still executes the right action.
+        assertEquals(IntentType.PLAN_DAY, say("Jarvis bugungi rejeni tuz").intent)
+        assertEquals(IntentType.ADD_TASK, say("Jarvis ertaga soat 10 da yigilish qosh").intent)
+        assertEquals("Yig'ilish", db.taskDao().getAll().single().title)
+    }
+
     @Test fun `conversation history is persisted`() = runBlocking {
         say("salom")
         val log = db.conversationDao().getAll()

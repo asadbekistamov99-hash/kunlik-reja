@@ -53,6 +53,8 @@ import com.jarvis.settings.AiMode
 import com.jarvis.settings.JarvisSettings
 import com.jarvis.settings.SttEngineChoice
 import com.jarvis.settings.WakeEngineChoice
+import com.jarvis.settings.TtsEngineChoice
+import com.jarvis.settings.VoiceGender
 import com.example.ui.components.GlassCard
 import com.example.ui.components.SectionTitle
 import com.example.ui.navigation.LocalHostActions
@@ -95,6 +97,11 @@ fun SettingsScreen(vm: JarvisViewModel) {
             Text("Sezgirlik: ${(s.wakeSensitivity * 100).toInt()}%", color = Titanium300, fontSize = 13.sp)
             Slider(s.wakeSensitivity, { vm.set(JarvisSettings.WAKE_SENSITIVITY, it) }, valueRange = 0.1f..0.95f)
             ToggleRow("Ekran qulflanganda ham tinglash", null, s.listenWhenLocked) { vm.set(JarvisSettings.LISTEN_WHEN_LOCKED, it) }
+            Text("Jarvisni telefonning standart yordamchisi qilsangiz, quvvat/uy tugmasini uzoq bosganda ham ilovani ochmasdan tinglaydi. " +
+                "Bildirishnoma panelidagi \"Jarvis\" tugmasi ham shunday ishlaydi.", color = Titanium300, fontSize = 12.sp)
+            OutlinedButton(onClick = { host.openAssistantSettings() }, modifier = Modifier.testTag("button_default_assistant")) {
+                Text("Standart yordamchi qilish")
+            }
             ToggleRow("Batareya tejash rejimida pauza", null, s.pauseInBatterySaver) { vm.set(JarvisSettings.PAUSE_IN_BATTERY_SAVER, it) }
         }
 
@@ -118,6 +125,17 @@ fun SettingsScreen(vm: JarvisViewModel) {
                 vm.set(JarvisSettings.AUTO_DOWNLOAD_MODELS, it)
             }
             Spacer(Modifier.height(6.dp))
+            Text("Jarvis ovozi", color = Titanium300, fontSize = 13.sp)
+            ChoiceRow(listOf(VoiceGender.MALE to "Erkak", VoiceGender.FEMALE to "Ayol"), s.voiceGender) {
+                vm.set(JarvisSettings.VOICE_GENDER, it.name)
+            }
+            Text("Ovoz dvigateli", color = Titanium300, fontSize = 13.sp)
+            ChoiceRow(listOf(TtsEngineChoice.AUTO to "Avto", TtsEngineChoice.GEMINI to "Gemini (neyron)",
+                TtsEngineChoice.OPENAI to "OpenAI (neyron)", TtsEngineChoice.DEVICE to "Qurilma"), s.ttsEngine) {
+                vm.set(JarvisSettings.TTS_ENGINE, it.name)
+            }
+            Text("Neyron ovozlar eng tabiiy va ravon eshitiladi. Ular uchun internet va Gemini yoki OpenAI kaliti kerak. " +
+                "Kalit bo'lmasa, qurilma ovozi ishlatiladi.", color = Titanium300, fontSize = 12.sp)
             Text("Jarvis ovozi tili", color = Titanium300, fontSize = 13.sp)
             ChoiceRow(listOf("auto" to "Avto", "uz-UZ" to "O'zbek", "tr-TR" to "Turk", "ru-RU" to "Rus", "en-US" to "Ingliz"), s.ttsLanguage) {
                 vm.set(JarvisSettings.TTS_LANGUAGE, it)

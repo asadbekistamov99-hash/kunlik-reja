@@ -165,6 +165,9 @@ class JarvisDeviceTest {
 
     @Test fun restartsAutomaticallyFromBackgroundWithOverlayPermission() {
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("screen_dashboard").fetchSemanticsNodes().isNotEmpty() }
+        // First launch now auto-enables the assistant; stop it so this test proves the restart.
+        JarvisServiceController.stop(context)
+        assertTrue(waitFor(10_000) { !JarvisForegroundService.isRunning })
         shell("appops set ${context.packageName} SYSTEM_ALERT_WINDOW allow")
         assumeTrue("overlay permission not applied", waitFor(5_000) { android.provider.Settings.canDrawOverlays(context) })
         shell("input keyevent KEYCODE_HOME")
@@ -174,6 +177,39 @@ class JarvisDeviceTest {
         val nm = context.getSystemService(NotificationManager::class.java)
         assertTrue("resume notification cleared", waitFor(5_000) { nm.activeNotifications.none { it.id == 4243 } })
         shell("appops set ${context.packageName} SYSTEM_ALERT_WINDOW default")
+    }
+
+    private fun listenCount() = container.voice.state.value.listenCount
+
+    @Test fun wakeWordInBackgroundStartsListeningWithoutOpeningTheApp() {
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("screen_dashboard").fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(JarvisServiceController.start(context))
+        assertTrue(waitFor { JarvisForegroundService.isRunning })
+        shell("input keyevent KEYCODE_HOME")
+        assertTrue("app went to background", waitFor(10_000) {
+            !androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+        })
+        // What the service does when "Hey Jarvis" is detected:
+        val before = listenCount()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { container.voice.onWakeWord() }
+        assertTrue("voice turn started in background", waitFor(10_000) { listenCount() > before })
+        assertFalse("app UI stayed closed",
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { container.voice.cancel() }
+    }
+
+    @Test fun assistantGestureStartsJarvisWithoutOpeningTheApp() {
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("screen_dashboard").fetchSemanticsNodes().isNotEmpty() }
+        JarvisServiceController.stop(context)
+        assertTrue(waitFor(10_000) { !JarvisForegroundService.isRunning })
+        shell("input keyevent KEYCODE_HOME")
+        Thread.sleep(1000)
+        // The system sends ACTION_ASSIST when Jarvis is the default assistant (long-press power/home).
+        val before = listenCount()
+        shell("am start -a android.intent.action.ASSIST -n ${context.packageName}/com.jarvis.service.AssistActivity")
+        assertTrue("service started by the assist gesture", waitFor { JarvisForegroundService.isRunning })
+        assertTrue("listening started", waitFor(10_000) { listenCount() > before })
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { container.voice.cancel() }
     }
 
     @Test fun rebootRecoveryPath() {
