@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -26,6 +28,24 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
     ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+
+    // Read API keys from local.properties (git-ignored); fall back to empty strings for CI
+    val localProperties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+      localProperties.load(localPropertiesFile.inputStream())
+    }
+
+    buildConfigField(
+      "String",
+      "GEMINI_API_KEY",
+      "\"${localProperties.getProperty("GEMINI_API_KEY", "")}\""
+    )
+    buildConfigField(
+      "String",
+      "OPENAI_API_KEY",
+      "\"${localProperties.getProperty("OPENAI_API_KEY", "")}\""
+    )
   }
 
   signingConfigs {

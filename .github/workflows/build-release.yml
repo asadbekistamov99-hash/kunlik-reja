@@ -1,0 +1,90 @@
+name: Build APK Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - claude/practical-volta-6urq6w
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Create local.properties with API keys
+        run: |
+          cat > local.properties << EOF
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          EOF
+
+      - name: Build Release APK
+        run: |
+          chmod +x gradlew
+          ./gradlew clean assembleRelease \
+            -x lintVitalRelease \
+            -x lint \
+            -x testReleaseUnitTest \
+            --no-daemon \
+            --stacktrace
+
+      - name: Upload APK to artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: app/build/outputs/apk/release/app-release.apk
+          body: |
+            # Jarvis Ultra Release
+
+            Built with Gemini 2.5 Flash TTS and OpenAI TTS support.
+
+            **Features:**
+            - Neural voices (Gemini & OpenAI)
+            - Voice gender selection
+            - Offline Uzbek speech recognition
+            - 24/7 hands-free activation
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to latest release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: app/build/outputs/apk/release/app-release.apk
+          tag_name: latest-apk
+          body: |
+            # Jarvis Ultra - Latest Build
+
+            Auto-built from main branch.
+
+            **API Integration:**
+            - ✅ Gemini 2.5 Flash TTS
+            - ✅ OpenAI TTS (Nova/Onyx)
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
