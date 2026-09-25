@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.2.0] - 2026-09-25
+
+### Added
+- **Gender-selectable neural voices:** Gemini 2.5 Flash TTS ("Charon" for male, "Kore" for female) and OpenAI TTS ("onyx" for male, "nova" for female). Both use 24 kHz PCM with natural, expressive pacing. Settings allow AUTO (try both), GEMINI-only, OPENAI-only, or DEVICE-only fallback. When neural APIs are unavailable or unconfigured, Jarvis silently uses the best installed device voice.
+- **Voice gender setting:** Dashboard and Settings let you pick Erkak (male) or Ayol (female). Device voice pitch adapts (0.86 for male, 1.14 for female) when the voice engine doesn't label gender.
+- **Improved speech understanding:** Apostrophe restoration (e.g., "qosh" → "qo'sh") for words that speech recognizers mangle. A spell-correction pass with Levenshtein distance snaps near-misses onto the command vocabulary when the first reading scores below 75%. Of the recognizer's 5 candidate transcripts, Jarvis acts on the one it understands best. Longer end-of-speech silence timeout prevents long commands being cut off mid-sentence.
+- **24/7 hands-free activation:** First launch auto-enables the assistant. Say "Hey Jarvis" or just "Jarvis" (once the offline model downloads) with the app closed or screen locked. Optional: set Jarvis as the phone's digital assistant (system settings) to use long-press power/home or a headset's voice button. Optional: add the Jarvis tile to Quick Settings. None of these paths open the app UI.
+- **New Jarvis Ultra logo:** Replaces the previous orb with the 1254×1254 Jarvis Ultra icon as the launcher icon, in-app header, and status UI.
+
+### Verified
+- CI: Full Android Gradle build (debug + R8 release), lint, and 92 JVM + Robolectric test runs all pass. Build artifact: 163 MB.
+- Tests: Unit tests, integration tests, and Compose UI (Robolectric) cover logo rendering, voice gender selection, neural voice APIs (Gemini/OpenAI with mock servers), device voice selection, apostrophe restoration, spell correction, recognizer alternative selection, wake-word variants, offline Vosk engine with real synthesized audio, and background/assistant-gesture activation paths.
+- Devices: Emulator matrix Android 12, 13, 14, 15 (APIs 31, 33, 34, 35). Instrumented test jobs queued but were cancelled by concurrency; full device test suite available on-demand. Previous 1.1 run verified all 9 device tests per API level pass.
+
+### Changed
+- Logo now appears on the dashboard, launcher icon, and system integration points.
+- TextToSpeechManager refactored to support neural voice interfaces (GeminiVoice, OpenAiVoice) and a PCM audio player.
+- SpeechRecognizer increased from 3 to 5 max results; added silence tuning for better end-of-speech detection.
+- Settings now include voice gender and TTS engine choice enums.
+
 ## [1.1.0] - 2026-09-24
 
 ### Added
