@@ -148,9 +148,17 @@ class AppContainer(
 
     val tts by lazy {
         TextToSpeechManager(context, listOf(
-            GeminiVoice(http, { apiKey(SecureStore.GEMINI_API_KEY, BuildConfig.GEMINI_API_KEY, "MY_GEMINI_API_KEY") }, network::isOnline),
-            OpenAiVoice(http, { apiKey(SecureStore.OPENAI_API_KEY, BuildConfig.OPENAI_API_KEY, "MY_OPENAI_API_KEY") }, network::isOnline)
-        ))
+            GeminiVoice(http, {
+                val key = apiKey(SecureStore.GEMINI_API_KEY, BuildConfig.GEMINI_API_KEY, "MY_GEMINI_API_KEY")
+                if (key != null) Log.d("AppContainer", "Gemini API key available")
+                key
+            }, network::isOnline),
+            OpenAiVoice(http, {
+                val key = apiKey(SecureStore.OPENAI_API_KEY, BuildConfig.OPENAI_API_KEY, "MY_OPENAI_API_KEY")
+                if (key != null) Log.d("AppContainer", "OpenAI API key available")
+                key
+            }, network::isOnline)
+        )).also { Log.d("AppContainer", "TTS initialized with neural voices") }
     }
     /** Offline Uzbek speech recognition model. */
     val voskUzModel by lazy { VoskModel(context, http, "vosk/model-uz", VoskModel.UZ_URL, 50) }

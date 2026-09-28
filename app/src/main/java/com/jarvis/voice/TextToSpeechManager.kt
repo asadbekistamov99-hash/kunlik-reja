@@ -45,8 +45,12 @@ class GeminiVoice(
     private val endpoint: String = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
 ) : NeuralVoice {
     override val id = "gemini"
-    override fun isAvailable() = !apiKey().isNullOrBlank() && online().also {
-        if (!it) Log.d("GeminiVoice", "Not available: hasKey=${!apiKey().isNullOrBlank()}, online=${online()}")
+    override fun isAvailable(): Boolean {
+        val hasKey = !apiKey().isNullOrBlank()
+        val isOnline = online()
+        val available = hasKey && isOnline
+        Log.d("GeminiVoice", "isAvailable() = $available (key=$hasKey, online=$isOnline)")
+        return available
     }
 
     override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
@@ -93,8 +97,12 @@ class OpenAiVoice(
     private val endpoint: String = "https://api.openai.com/v1/audio/speech"
 ) : NeuralVoice {
     override val id = "openai"
-    override fun isAvailable() = !apiKey().isNullOrBlank() && online().also {
-        if (!it) Log.d("OpenAiVoice", "Not available: hasKey=${!apiKey().isNullOrBlank()}, online=${online()}")
+    override fun isAvailable(): Boolean {
+        val hasKey = !apiKey().isNullOrBlank()
+        val isOnline = online()
+        val available = hasKey && isOnline
+        Log.d("OpenAiVoice", "isAvailable() = $available (key=$hasKey, online=$isOnline)")
+        return available
     }
 
     override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
@@ -189,6 +197,7 @@ class TextToSpeechManager(
     }
 
     fun configure(language: String, speechRate: Float, voiceGender: VoiceGender = gender, engine: TtsEngineChoice = engineChoice) {
+        Log.d(TAG, "configure: lang=$language, rate=$speechRate, gender=$voiceGender, engine=$engine")
         languagePreference = language
         rate = speechRate
         gender = voiceGender
@@ -197,25 +206,33 @@ class TextToSpeechManager(
     }
 
     private fun applyVoice() {
+        Log.d(TAG, "applyVoice: language=$languagePreference, gender=$gender, engineChoice=$engineChoice")
         val candidates = if (languagePreference != "auto") listOf(Locale.forLanguageTag(languagePreference)) + FALLBACKS else FALLBACKS
         for (locale in candidates + Locale.getDefault()) {
             if (tts.isLanguageAvailable(locale) >= AndroidTts.LANG_AVAILABLE) {
                 tts.setLanguage(locale)
                 activeLocale = locale
+                Log.d(TAG, "Device voice locale set to: $locale")
                 break
             }
         }
         val locale = activeLocale
         val voices = runCatching { tts.voices?.toList().orEmpty() }.getOrDefault(emptyList())
+        Log.d(TAG, "Available device voices: ${voices.size}")
         val best = locale?.let { l ->
             voices.filter { it.locale.language == l.language && !it.features.orEmpty().contains(AndroidTts.Engine.KEY_FEATURE_NOT_INSTALLED) }
                 .maxByOrNull { voiceScore(it.name, it.features.orEmpty(), it.quality, it.isNetworkConnectionRequired, gender) }
         }
-        best?.let { runCatching { tts.voice = it; activeVoiceName = it.name } }
+        if (best != null) {
+            runCatching { tts.voice = best; activeVoiceName = best.name }
+            Log.d(TAG, "Selected device voice: ${best.name}")
+        }
         val labelled = best?.let { genderOf(it.name, it.features.orEmpty()) } != null
         // When the engine doesn't tell us a voice's gender, shape it with pitch instead.
-        tts.setPitch(if (labelled) 1.0f else if (gender == VoiceGender.MALE) 0.86f else 1.14f)
+        val pitch = if (labelled) 1.0f else if (gender == VoiceGender.MALE) 0.86f else 1.14f
+        tts.setPitch(pitch)
         tts.setSpeechRate(rate * 0.97f)
+        Log.d(TAG, "Pitch set to: $pitch, speech rate: ${rate * 0.97f}")
     }
 
     /** Speaks [text] and suspends until playback finishes (or fails/stops). */
