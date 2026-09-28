@@ -46,6 +46,11 @@ android {
       "OPENAI_API_KEY",
       "\"${localProperties.getProperty("OPENAI_API_KEY", "")}\""
     )
+    buildConfigField(
+      "String",
+      "GOOGLE_OAUTH_CLIENT_ID",
+      "\"${localProperties.getProperty("GOOGLE_OAUTH_CLIENT_ID", "")}\""
+    )
   }
 
   signingConfigs {

@@ -3,6 +3,7 @@ package com.jarvis.integrations
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.example.BuildConfig
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
@@ -114,13 +115,12 @@ class GoogleAuth(private val context: Context, private val http: OkHttpClient) {
         private const val USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
         private const val REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 
-        // TODO: Replace with your OAuth 2.0 Client ID from Google Cloud Console
-        // Get it from: https://console.cloud.google.com/apis/credentials
-        // Steps:
-        // 1. Create OAuth 2.0 Client ID for Android
-        // 2. Provide package: com.aistudio.kuntartibi.xqpzly
-        // 3. Provide SHA-1: Get from ./gradlew signingReport
-        // 4. Copy the Client ID and paste below
-        private const val CLIENT_ID = "REPLACE_WITH_YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+        // OAuth 2.0 Client ID from local.properties or BuildConfig
+        // Setup: https://console.cloud.google.com/apis/credentials
+        // See SETUP_GOOGLE_AUTH.md for complete instructions
+        private val CLIENT_ID: String
+            get() = BuildConfig.GOOGLE_OAUTH_CLIENT_ID.ifBlank {
+                "REPLACE_WITH_YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+            }
     }
 }
