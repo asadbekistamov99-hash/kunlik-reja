@@ -157,7 +157,11 @@ class VoiceSession(
     private suspend fun speak(response: JarvisResponse) {
         if (response.text.isBlank()) return
         _state.update { it.copy(status = AssistantStatus.SPEAKING) }
-        tts.speak(response.text)
+        val ok = tts.speak(response.text)
+        if (!ok) {
+            Log.w(TAG, "TTS speak failed for: ${response.text.take(40)}")
+            _state.update { it.copy(error = "Ovoz chiqish muvaffaq bo'lmadi") }
+        }
     }
 
     private fun finishTurn() {

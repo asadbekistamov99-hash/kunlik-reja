@@ -45,10 +45,14 @@ class GeminiVoice(
     private val endpoint: String = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
 ) : NeuralVoice {
     override val id = "gemini"
-    override fun isAvailable() = !apiKey().isNullOrBlank() && online()
+    override fun isAvailable() = !apiKey().isNullOrBlank() && online().also {
+        if (!it) Log.d("GeminiVoice", "Not available: hasKey=${!apiKey().isNullOrBlank()}, online=${online()}")
+    }
 
     override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
-        val key = apiKey() ?: return@withContext null
+        val key = apiKey() ?: run { Log.w("GeminiVoice", "No API key available"); return@withContext null }
+        if (!online()) { Log.w("GeminiVoice", "Network offline"); return@withContext null }
+        Log.d("GeminiVoice", "Synthesizing with ${gender.name} voice")
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
                 "O'zbek tilida tabiiy, iliq va ravon, xuddi suhbatdoshdek gapiring: $text")))))
@@ -59,11 +63,19 @@ class GeminiVoice(
         val request = Request.Builder().url(endpoint).header("x-goog-api-key", key)
             .post(body.toString().toRequestBody(JSON)).build()
         http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) { Log.w("GeminiVoice", "HTTP ${resp.code}"); return@use null }
-            val data = JSONObject(resp.body?.string().orEmpty()).optJSONArray("candidates")?.optJSONObject(0)
+            if (!resp.isSuccessful) {
+                Log.w("GeminiVoice", "HTTP ${resp.code}: ${resp.body?.string()?.take(500)}")
+                return@use null
+            }
+            val respBody = resp.body?.string().orEmpty()
+            val data = JSONObject(respBody).optJSONArray("candidates")?.optJSONObject(0)
                 ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
                 ?.optJSONObject("inlineData")?.optString("data")
-            data?.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
+            if (data.isNullOrBlank()) {
+                Log.w("GeminiVoice", "No audio data in response: ${respBody.take(500)}")
+                return@use null
+            }
+            Base64.decode(data, Base64.DEFAULT)
         }
     }
 
@@ -81,10 +93,14 @@ class OpenAiVoice(
     private val endpoint: String = "https://api.openai.com/v1/audio/speech"
 ) : NeuralVoice {
     override val id = "openai"
-    override fun isAvailable() = !apiKey().isNullOrBlank() && online()
+    override fun isAvailable() = !apiKey().isNullOrBlank() && online().also {
+        if (!it) Log.d("OpenAiVoice", "Not available: hasKey=${!apiKey().isNullOrBlank()}, online=${online()}")
+    }
 
     override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
-        val key = apiKey() ?: return@withContext null
+        val key = apiKey() ?: run { Log.w("OpenAiVoice", "No API key available"); return@withContext null }
+        if (!online()) { Log.w("OpenAiVoice", "Network offline"); return@withContext null }
+        Log.d("OpenAiVoice", "Synthesizing with ${gender.name} voice")
         val body = JSONObject()
             .put("model", "gpt-4o-mini-tts")
             .put("voice", voiceName(gender))
@@ -94,7 +110,14 @@ class OpenAiVoice(
         val request = Request.Builder().url(endpoint).header("Authorization", "Bearer $key")
             .post(body.toString().toRequestBody("application/json".toMediaType())).build()
         http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) { Log.w("OpenAiVoice", "HTTP ${resp.code}"); null } else resp.body?.bytes()
+            if (!resp.isSuccessful) {
+                Log.w("OpenAiVoice", "HTTP ${resp.code}: ${resp.body?.string()?.take(500)}")
+                null
+            } else {
+                val pcm = resp.body?.bytes()
+                Log.d("OpenAiVoice", "Received ${pcm?.size ?: 0} bytes of audio")
+                pcm
+            }
         }
     }
 
@@ -200,17 +223,22 @@ class TextToSpeechManager(
         if (text.isBlank()) return true
         pickNeural()?.let { voice ->
             _speaking.value = true
-            val pcm = runCatching { withTimeoutOrNull(NEURAL_TIMEOUT_MS) { voice.synthesize(text, gender) } }.getOrNull()
+            Log.d(TAG, "Attempting neural voice: ${voice.id}, available=${voice.isAvailable()}")
+            val pcm = runCatching { withTimeoutOrNull(NEURAL_TIMEOUT_MS) { voice.synthesize(text, gender) } }.apply {
+                if (isFailure) Log.e(TAG, "Neural synthesis failed", exceptionOrNull())
+            }.getOrNull()
             if (pcm != null && pcm.size > 1000) {
                 lastEngine = voice.id
+                Log.d(TAG, "Neural voice ${voice.id} synthesized ${pcm.size} bytes")
                 val p = PcmPlayer(NEURAL_SAMPLE_RATE)
                 player = p
                 val ok = try { p.play(pcm) } finally { player = null; _speaking.value = false }
                 return ok
+            } else {
+                Log.w(TAG, "Neural voice ${voice.id}: null response or small PCM (${pcm?.size ?: 0} bytes), falling back")
             }
             _speaking.value = false
-            Log.w(TAG, "Neural voice ${voice.id} unavailable, using device voice")
-        }
+        } ?: Log.d(TAG, "No neural voice selected (engine=$engineChoice)")
         lastEngine = "device"
         return speakWithDevice(text)
     }

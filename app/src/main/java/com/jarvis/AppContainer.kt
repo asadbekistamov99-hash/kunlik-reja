@@ -1,6 +1,7 @@
 package com.jarvis
 
 import android.content.Context
+import android.util.Log
 import com.example.BuildConfig
 import com.jarvis.automation.HabitEngine
 import com.jarvis.automation.ReminderEngine
@@ -112,9 +113,15 @@ class AppContainer(
     val gmail by lazy { GmailManager(googleApi) }
 
     // ---- brain & voice ----
-    fun apiKey(name: String, buildDefault: String, placeholder: String): String? =
-        secureStore.getString(name)?.takeIf { it.isNotBlank() }
-            ?: buildDefault.takeIf { it.isNotBlank() && it != placeholder }
+    fun apiKey(name: String, buildDefault: String, placeholder: String): String? {
+        val fromSecure = secureStore.getString(name)?.takeIf { it.isNotBlank() }
+        val fromBuild = buildDefault.takeIf { it.isNotBlank() && it != placeholder }
+        val result = fromSecure ?: fromBuild
+        if (result == null) {
+            Log.d("AppContainer", "No API key for $name: secure=${fromSecure != null}, build=${fromBuild != null}")
+        }
+        return result
+    }
 
     fun picovoiceKey(): String? =
         apiKey(SecureStore.PICOVOICE_ACCESS_KEY, BuildConfig.PICOVOICE_ACCESS_KEY, "MY_PICOVOICE_ACCESS_KEY")
