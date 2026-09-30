@@ -165,17 +165,18 @@ class ActionExecutor(
 
     private suspend fun completeTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
         val task = resolveTask(intent, parsed)
-        if (task == null) {
+        return if (task == null) {
             // A fuzzy title may have matched the wrong task; confirm with the user instead of
             // silently completing something they didn't mean.
             val title = intent.slot(ResolvedIntent.TITLE)
-            return if (!title.isNullOrBlank() && title.length > 3) {
+            val notFound = JarvisResponse("Qaysi vazifa bajarilganini topa olmadim. Nomini aniqroq ayting.", intent.type, success = false)
+            if (!title.isNullOrBlank() && title.length > 3) {
                 val candidates = tasks.search(title).filter { !it.isCompleted }
                 if (candidates.size == 1) {
                     context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to candidates[0].title))
                     JarvisResponse("\"${candidates[0].title}\" bajarilgan deb belgilaymi?", intent.type, expectsReply = true)
-                } else JarvisResponse("Qaysi vazifa bajarilganini topa olmadim. Nomini aniqroq ayting.", intent.type, success = false)
-            } else JarvisResponse("Qaysi vazifa bajarilganini topa olmadim. Nomini aniqroq ayting.", intent.type, success = false)
+                } else notFound
+            } else notFound
         } else {
             // Copy with isCompleted=true lets TaskRepository stamp completedAt once; that drives
             // work-pattern learning and cancels the reminder (scheduleTask skips completed tasks).
