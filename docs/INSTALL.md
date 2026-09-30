@@ -2,7 +2,7 @@
 
 ## 1. Install the APK
 
-1. Download `JarvisUltra-v1.0.0.apk` from the GitHub Release.
+1. Download `JarvisUltra-v1.2.1.apk` from the [GitHub Release](https://github.com/asadbekistamov99-hash/kunlik-reja/releases/latest).
 2. On the phone (Android 12–15): **Settings → Security → Install unknown apps**. Allow your browser or file manager.
 3. Open the APK and tap **Install**.
    - If an older "Kun Tartibi" build is installed with a *different signature*, uninstall it first.
@@ -61,6 +61,15 @@ The app uses OAuth. The developer (or whoever builds the APK) must register it o
 4. In the app: **Settings → Google hisobini ulash**, pick the account and approve.
 
 Without Google, calendar commands use the phone's own calendar (grant **Taqvim**).
+
+## 5b. Agar "Google hisobini ulash" ishlamasa
+
+Xatolik xabari endi aniq sababni ko'rsatadi. Eng ko'p uchraydigan ikkita holat:
+
+| Xato | Sababi va yechimi |
+|---|---|
+| **API 10** | APK imzosi (SHA-1) Google Cloud Console'dagi Android OAuth klientiga kiritilmagan. `keytool -list -v -keystore <keystore>` bilan SHA-1'ni oling va Credentials → OAuth client (Android) ga qo'shing. CI'da yaratilgan APK'lar har safar boshqa vaqtinchalik kalit bilan imzolanadi — ularning SHA-1'sini ham shu yerga qo'shish kerak. |
+| **API 16** | Hisobingiz OAuth consent ekranining **Test users** ro'yxatida yo'q (ilova test rejimida). Google Cloud Console → APIs & Services → OAuth consent screen → Test users ga o'z hisobingizni qo'shing. |
 
 ## 6. Backup and restore
 

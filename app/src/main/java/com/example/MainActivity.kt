@@ -194,7 +194,18 @@ class MainActivity : FragmentActivity(), HostActions {
                         googleAuthLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
                     } else jarvis.onGoogleAuthorized(result.accessToken)
                 }
-                .onFailure { jarvis.message("Google bilan ulanib bo'lmadi: ${it.message}") }
+                .onFailure {
+                    // Surface the concrete Play-services status so "it doesn't work" becomes
+                    // something fixable (OAuth client/SHA-1 mismatch shows as API 10/16).
+                    val code = (it as? com.google.android.gms.common.api.ApiException)?.statusCode
+                    val why = when (code) {
+                        10 -> "OAuth sozlamasi: APK imzosi (SHA-1) va paket nomi Google Cloud'dagi Android klient bilan mos emas (API 10)"
+                        16 -> "Ruxsat berilmadi yoki bekor qilindi (API 16). Google Cloud'da OAuth test foydalanuvchilaringizga ushbu hisobni qo'shing"
+                        12500, 17 -> "Google Play services yo'q yoki eskirgan"
+                        else -> it.message ?: it.javaClass.simpleName
+                    }
+                    jarvis.message("Google bilan ulanib bo'lmadi: $why")
+                }
         }
     }
 
