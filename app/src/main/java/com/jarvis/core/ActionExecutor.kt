@@ -180,12 +180,11 @@ class ActionExecutor(
             // Copy with isCompleted=true lets TaskRepository stamp completedAt once; that drives
             // work-pattern learning and cancels the reminder (scheduleTask skips completed tasks).
             tasks.updateTask(task.copy(isCompleted = true))
-            val done = tasks.tasksFor(clock().toLocalDate().toString()).count { it.isCompleted && it.id != task.id }
             val remaining = tasks.tasksFor(clock().toLocalDate().toString()).count { !it.isCompleted && it.id != task.id }
             val extra = buildString {
-                if (task.deadline.isNotBlank() && task.deadline <= clock().toLocalDate().toString()) add(" Muddatidan oldin bajarildi!")
-                if (remaining == 0) add(" Bugungi barcha ishlar tugadi, barakalla!")
-                else add(" Bugun yana $remaining ta vazifa qoldi.")
+                if (task.deadline.isNotBlank() && task.deadline <= clock().toLocalDate().toString()) append(" Muddatidan oldin bajarildi!")
+                if (remaining == 0) append(" Bugungi barcha ishlar tugadi, barakalla!")
+                else append(" Bugun yana $remaining ta vazifa qoldi.")
             }
             JarvisResponse("Barakalla! \"${task.title}\" bajarildi.$extra", intent.type)
         }
