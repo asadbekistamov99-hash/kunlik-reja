@@ -158,6 +158,8 @@ class IntentResolver {
         }
         if (PENDING_RE.containsMatchIn(t)) return hit(IntentType.LIST_PENDING, 0.95f)
         if (PLAN_RE.containsMatchIn(t)) return hit(IntentType.PLAN_DAY, 0.95f)
+        // Completion/reschedule/delete run before reminders so that "…ni bajarildi qilib belgila"
+        // is understood as a status update, not a new reminder.
         if (COMPLETE_RE.containsMatchIn(t)) {
             return hit(IntentType.COMPLETE_TASK, 0.85f, ResolvedIntent.TITLE to titleFrom(cmd.remainder, COMPLETE_RE))
         }
@@ -275,7 +277,7 @@ class IntentResolver {
         private val HABIT_RE = Regex("""\b(?:odat\w*)""")
         private val PENDING_RE = Regex("""\b(?:tugallanmagan|bajarilmagan|qolgan|qilinmagan|kutilayotgan|tugatilmagan|bitmagan)\w*""")
         private val PLAN_RE = Regex("""\b(?:reja\w*\s+tuz\w*|rejala\w*\s+tuz\w*|rejalashtirib ber\w*|kunimni rejala\w*|kunni rejala\w*|jadval\w* tuz\w*|kun tartib\w* tuz\w*|rejani yangila\w*)""")
-        private val COMPLETE_RE = Regex("""\b(?:bajardim|bajarildi|bajarilgan deb|tugatdim|tugatildi|bitdi|bitirdim|qildim|tayyor bo'ldi|belgila\w*)""")
+        private val COMPLETE_RE = Regex("""\b(?:bajardim|bajarildi|bajarib bo'ldim|bajarilgan|tugatdim|tugatildi|tugataman|tugalladim|tugallandi|bitdi|bitirdim|qildim|qo'ydim|tayyor bo'ldi|belgila\w*)""")
         private val RESCHEDULE_RE = Regex("""\b(?:ko'chir\w*|sur\w*|o'zgartir\w*|kechiktir\w*)""")
         private val DELETE_RE = Regex("""\b(?:o'chir\w*|bekor qil\w*|olib tashla\w*|yo'q qil\w*)""")
         private val SUMMARY_RE = Regex("""\b(?:bugungi reja\w*|rejam\w*|rejalarim\w*|vazifalarim\w*|nima bor|nima ishlar|nechta vazifa\w*|kun tartib\w*|jadvalim\w*|nima qilishim kerak)""")

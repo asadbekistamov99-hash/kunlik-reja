@@ -217,7 +217,7 @@ class JarvisViewModel(private val container: AppContainer) : ViewModel() {
         val SECRET_KEYS = listOf(
             SecureStore.GEMINI_API_KEY to "Gemini API kaliti (onlayn AI agent)",
             SecureStore.PICOVOICE_ACCESS_KEY to "Picovoice AccessKey (\"Jarvis\" wake word)",
-            SecureStore.OPENAI_API_KEY to "OpenAI kaliti (Whisper STT)"
+            SecureStore.OPENAI_API_KEY to "OpenAI kaliti (neyron ovoz va Whisper)"
         )
     }
 }

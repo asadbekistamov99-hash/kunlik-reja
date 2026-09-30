@@ -143,7 +143,12 @@ class AppContainer(
         TextToSpeechManager(context, listOf(
             GeminiVoice(http, { apiKey(SecureStore.GEMINI_API_KEY, BuildConfig.GEMINI_API_KEY, "MY_GEMINI_API_KEY") }, network::isOnline),
             OpenAiVoice(http, { apiKey(SecureStore.OPENAI_API_KEY, BuildConfig.OPENAI_API_KEY, "MY_OPENAI_API_KEY") }, network::isOnline)
-        ))
+        )).also { tts ->
+            // Apply the user's OpenAI voice settings (model + speed) as soon as settings load.
+            appScope.launch {
+                settings.state.collect { s -> tts.openaiSettings(s.openaiTtsModel, s.openaiTtsSpeed) }
+            }
+        }
     }
     /** Offline Uzbek speech recognition model. */
     val voskUzModel by lazy { VoskModel(context, http, "vosk/model-uz", VoskModel.UZ_URL, 50) }

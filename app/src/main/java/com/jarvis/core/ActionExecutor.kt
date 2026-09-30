@@ -165,10 +165,30 @@ class ActionExecutor(
 
     private suspend fun completeTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
         val task = resolveTask(intent, parsed)
-            ?: return JarvisResponse("Qaysi vazifa bajarilganini topa olmadim. Nomini aniqroq ayting.", intent.type, success = false)
-        tasks.updateTask(task.copy(isCompleted = true))
-        val remaining = tasks.tasksFor(clock().toLocalDate().toString()).count { !it.isCompleted && it.id != task.id }
-        return JarvisResponse("Barakalla! \"${task.title}\" bajarildi. Bugun yana $remaining ta vazifa qoldi.", intent.type)
+        if (task == null) {
+            // A fuzzy title may have matched the wrong task; confirm with the user instead of
+            // silently completing something they didn't mean.
+            val title = intent.slot(ResolvedIntent.TITLE)
+            return if (!title.isNullOrBlank() && title.length > 3) {
+                val candidates = tasks.search(title).filter { !it.isCompleted }
+                if (candidates.size == 1) {
+                    context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to candidates[0].title))
+                    JarvisResponse("\"${candidates[0].title}\" bajarilgan deb belgilaymi?", intent.type, expectsReply = true)
+                } else JarvisResponse("Qaysi vazifa bajarilganini topa olmadim. Nomini aniqroq ayting.", intent.type, success = false)
+            } else JarvisResponse("Qaysi vazifa bajarilganini topa olmadim. Nomini aniqroq ayting.", intent.type, success = false)
+        } else {
+            // Copy with isCompleted=true lets TaskRepository stamp completedAt once; that drives
+            // work-pattern learning and cancels the reminder (scheduleTask skips completed tasks).
+            tasks.updateTask(task.copy(isCompleted = true))
+            val done = tasks.tasksFor(clock().toLocalDate().toString()).count { it.isCompleted && it.id != task.id }
+            val remaining = tasks.tasksFor(clock().toLocalDate().toString()).count { !it.isCompleted && it.id != task.id }
+            val extra = buildString {
+                if (task.deadline.isNotBlank() && task.deadline <= clock().toLocalDate().toString()) add(" Muddatidan oldin bajarildi!")
+                if (remaining == 0) add(" Bugungi barcha ishlar tugadi, barakalla!")
+                else add(" Bugun yana $remaining ta vazifa qoldi.")
+            }
+            JarvisResponse("Barakalla! \"${task.title}\" bajarildi.$extra", intent.type)
+        }
     }
 
     private suspend fun deleteTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {

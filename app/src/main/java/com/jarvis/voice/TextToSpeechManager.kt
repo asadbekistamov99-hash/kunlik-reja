@@ -78,7 +78,9 @@ class OpenAiVoice(
     private val http: OkHttpClient,
     private val apiKey: () -> String?,
     private val online: () -> Boolean,
-    private val endpoint: String = "https://api.openai.com/v1/audio/speech"
+    private val endpoint: String = "https://api.openai.com/v1/audio/speech",
+    var model: String = TTS_MODEL,
+    var speed: Float = 1.0f
 ) : NeuralVoice {
     override val id = "openai"
     override fun isAvailable() = !apiKey().isNullOrBlank() && online()
@@ -86,11 +88,12 @@ class OpenAiVoice(
     override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
         val key = apiKey() ?: return@withContext null
         val body = JSONObject()
-            .put("model", "gpt-4o-mini-tts")
+            .put("model", model)
             .put("voice", voiceName(gender))
             .put("input", text)
             .put("response_format", "pcm")
-            .put("instructions", "Speak Uzbek naturally and fluently, like a warm, confident personal assistant. Natural pauses, no robotic tone.")
+            .put("speed", speed.toDouble())
+            .put("instructions", "O'zbek tilida tabiiy, aniq va ravon so'zla, xuddi iliq va ishonchli shaxsiy yordamchidek. Har bir harfni tushunarli talaffuz qil, jumlalar orasida qisqa tabiiy pauza qil, robotdek ovoz chiqarma. Son va vaqtlarni o'zbekcha o'qi.")
         val request = Request.Builder().url(endpoint).header("Authorization", "Bearer $key")
             .post(body.toString().toRequestBody("application/json".toMediaType())).build()
         http.newCall(request).execute().use { resp ->
@@ -99,6 +102,8 @@ class OpenAiVoice(
     }
 
     companion object {
+        /** Higher-fidelity TTS model; upgrade point for future voices. */
+        const val TTS_MODEL = "gpt-4o-mini-tts"
         fun voiceName(gender: VoiceGender) = if (gender == VoiceGender.MALE) "onyx" else "nova"
     }
 }
@@ -129,6 +134,8 @@ class TextToSpeechManager(
         private set
     @Volatile var lastEngine: String = "device"
         private set
+    @Volatile private var openaiTtsModel: String = OpenAiVoice.TTS_MODEL
+    @Volatile private var openaiTtsSpeed: Float = 1.0f
 
     private var languagePreference = "auto"
     private var rate = 1.0f
@@ -171,6 +178,13 @@ class TextToSpeechManager(
         gender = voiceGender
         engineChoice = engine
         if (ready.isCompleted) applyVoice()
+    }
+
+    /** Fine-tunes the OpenAI neural voice: model and speaking speed (0.5–2.0). */
+    fun openaiSettings(model: String, speed: Float) {
+        openaiTtsModel = model.ifBlank { OpenAiVoice.TTS_MODEL }
+        openaiTtsSpeed = speed.coerceIn(0.5f, 2.0f)
+        neuralVoices.filterIsInstance<OpenAiVoice>().forEach { it.model = openaiTtsModel; it.speed = openaiTtsSpeed }
     }
 
     private fun applyVoice() {

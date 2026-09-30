@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.2.1] - 2026-09-30
+
+### Added
+- **OpenAI voice fine-tuning:** the neural voice model (default `gpt-4o-mini-tts`) and speaking speed (0.5–2.0×) are now settings, stored encrypted with the rest and applied live to every reply.
+- **Sharper Uzbek voice prompt:** the OpenAI TTS instructions were rewritten in Uzbek and demand clear pronunciation, natural sentence pauses and Uzbek-reading numbers and times — replies sound more fluent and intelligible.
+
+### Fixed
+- **Task completion actually sticks:** marking a task done now stamps `completedAt` exactly once via `TaskRepository` (so work-pattern learning counts it) and cancels the task's reminder, because completed tasks no longer get scheduled. "Bajarildi", "bajarildi qilib belgila", "tugatdim", "tugallandi", "qo'ydim" and more all complete a task now, and completion runs before reminder parsing so status updates are never heard as new reminders.
+- **Fuzzy completion confirms first:** when only a fuzzy title match is found, Jarvis asks ""X" bajarilgan deb belgilaymi?" instead of silently completing a possibly wrong task.
+- **metadata.json** now describes Jarvis Ultra instead of the legacy Kun Tartibi planner.
+
+### Verified
+- Unit tests cover the new completion phrases (with "uchrashuv qo'sh" still resolving as ADD_TASK) and the new settings parsing; the full JVM/Robolectric suite, lint and the R8 release build run in CI.
+
 ## [1.2.0] - 2026-09-25
 
 ### Added

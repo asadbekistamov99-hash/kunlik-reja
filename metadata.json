@@ -1,6 +1,6 @@
 {
-  "name": "Kun Tartibi - Task & Routine Planner",
-  "description": "Kun tartibini boshqarish, vazifalarni rejalashtirish va eslatmalar yuborish uchun qulay va zamonaviy mobil ilova.",
+  "name": "Jarvis Ultra — o'zbek tilidagi ovozli yordamchi",
+  "description": "Jarvis ovozli yordamchi: vazifalar, eslatmalar va odatlarni ovoz orqali boshqarish, oflayn wake word, Google Calendar va Gmail integratsiyasi.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

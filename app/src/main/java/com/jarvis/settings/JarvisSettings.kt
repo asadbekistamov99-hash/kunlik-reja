@@ -39,7 +39,11 @@ data class SettingsSnapshot(
     /** Download the offline Vosk models automatically on Wi-Fi/unmetered networks. */
     val autoDownloadModels: Boolean = true,
     val voiceGender: VoiceGender = VoiceGender.MALE,
-    val ttsEngine: TtsEngineChoice = TtsEngineChoice.AUTO
+    val ttsEngine: TtsEngineChoice = TtsEngineChoice.AUTO,
+    /** OpenAI TTS model id used when the OpenAI neural voice is active. */
+    val openaiTtsModel: String = "gpt-4o-mini-tts",
+    /** OpenAI neural voice speaking speed (0.5–2.0); 1.0 is natural. */
+    val openaiTtsSpeed: Float = 1.0f
 )
 
 class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
@@ -79,6 +83,8 @@ class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
         const val MODELS_REV = "models_rev"
         const val VOICE_GENDER = "voice_gender"
         const val TTS_ENGINE = "tts_engine"
+        const val OPENAI_TTS_MODEL = "openai_tts_model"
+        const val OPENAI_TTS_SPEED = "openai_tts_speed"
 
         fun parse(map: Map<String, String>): SettingsSnapshot {
             val d = SettingsSnapshot()
@@ -106,7 +112,9 @@ class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
                 onboardingDone = bool(ONBOARDING_DONE, d.onboardingDone),
                 autoDownloadModels = bool(AUTO_DOWNLOAD_MODELS, d.autoDownloadModels),
                 voiceGender = map[VOICE_GENDER]?.let { runCatching { VoiceGender.valueOf(it) }.getOrNull() } ?: d.voiceGender,
-                ttsEngine = map[TTS_ENGINE]?.let { runCatching { TtsEngineChoice.valueOf(it) }.getOrNull() } ?: d.ttsEngine
+                ttsEngine = map[TTS_ENGINE]?.let { runCatching { TtsEngineChoice.valueOf(it) }.getOrNull() } ?: d.ttsEngine,
+                openaiTtsModel = map[OPENAI_TTS_MODEL]?.takeIf { it.isNotBlank() } ?: d.openaiTtsModel,
+                openaiTtsSpeed = float(OPENAI_TTS_SPEED, d.openaiTtsSpeed).coerceIn(0.5f, 2.0f)
             )
         }
 
