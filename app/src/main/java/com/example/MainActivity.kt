@@ -67,8 +67,14 @@ class MainActivity : FragmentActivity(), HostActions {
     }
 
     private val googleAuthLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-        val token = runCatching { container.googleAuth.resultFromIntent(result.data).accessToken }.getOrNull()
-        jarvis.onGoogleAuthorized(token)
+        val authorization = runCatching {
+            container.googleAuth.resultFromIntent(result.data)
+        }.getOrNull()
+        if (authorization == null) {
+            jarvis.message("Google ruxsati oynasi yopildi yoki xatolik yuz berdi")
+        } else {
+            jarvis.onGoogleAuthorized(authorization.accessToken)
+        }
     }
 
     private val folderLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->

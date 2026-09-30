@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.2.1] - 2026-09-30
+
+### Changed
+- OpenAI neural voice is preferred when configured for smoother Uzbek speech, with Gemini and device fallback preserved.
+- Google authorization callback now handles cancelled or malformed consent results without falsely marking the account as connected.
+- Release version bumped to 1.2.1.
+
 ## [1.2.0] - 2026-09-25
 
 ### Added
