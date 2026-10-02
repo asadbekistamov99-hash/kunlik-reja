@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.2.2] - 2026-10-02
+
+### Fixed
+- **Google sign-in diagnostics:** Play-services status codes (API 10 = SHA-1/package mismatch, API 16 = missing test user) are now shown in the app, and INSTALL.md explains both fixes.
+
 ## [1.2.1] - 2026-09-30
 
 ### Added
