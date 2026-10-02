@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.3.0] - 2026-10-02
+
+### Added
+- **Release builds can embed API keys** from the repository secrets `GEMINI_API_KEY`, `OPENAI_API_KEY`, `PICOVOICE_ACCESS_KEY` and `GOOGLE_OAUTH_CLIENT_ID` (no key is stored in the repository). Keys can still be entered in Settings.
+- `GOOGLE_OAUTH_CLIENT_ID` build field and `docs/SETUP_UZ.md`, a short Uzbek setup guide for keys and Google sign-in.
+
 ## [1.2.2] - 2026-10-02
 
 ### Fixed

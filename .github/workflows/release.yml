@@ -72,6 +72,20 @@ jobs:
           fi
           echo "JARVIS_KEYSTORE_PATH=$KS" >> "$GITHUB_ENV"
 
+      - name: Embed API keys from repository secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PICOVOICE_ACCESS_KEY: ${{ secrets.PICOVOICE_ACCESS_KEY }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+        run: |
+          : > .env
+          for k in GEMINI_API_KEY OPENAI_API_KEY PICOVOICE_ACCESS_KEY GOOGLE_OAUTH_CLIENT_ID; do
+            v="${!k}"
+            [ -n "$v" ] && echo "$k=$v" >> .env
+          done
+          true
+
       - name: Test
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Build signed APK and AAB
