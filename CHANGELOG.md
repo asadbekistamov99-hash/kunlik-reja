@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.3.1] - 2026-10-05
+
+### Fixed
+- **Reminders are now visible and manageable:** "eslatma / budilnik qo'y" creates an item in *Vazifalar* (fires exactly on time) instead of a hidden record, so you can see, complete, move and delete it.
+- **"13:00 dagi ogohlantirishni o'chir" / "eslatmani o'chir"** now deletes the item (found by time or title) instead of being read as a new reminder or failing with "topa olmadim".
+- **Speech-recognizer slips:** "soat 1 0" is read as 10:00, "soati 9ga" as "soat 9 ga", "quy" as "qo'y"; filler "xullas" is no longer part of titles.
+- Exact alarms are granted automatically on Android 13+ (`USE_EXACT_ALARM`), so reminders no longer drift in Doze.
+
 ## [1.3.0] - 2026-10-02
 
 ### Added

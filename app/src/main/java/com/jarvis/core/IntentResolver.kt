@@ -149,9 +149,15 @@ class IntentResolver {
             } else hit(IntentType.CALENDAR_READ, 0.9f)
         }
 
-        if (REMINDER_RE.containsMatchIn(t)) {
+        // "eslatmani o'chir" / "13:00 dagi ogohlantirishni o'chir" removes an item; it must not be
+        // read as a request to create a new reminder.
+        if (DELETE_RE.containsMatchIn(t) && (REMINDER_RE.containsMatchIn(t) || WARNING_RE.containsMatchIn(t))) {
+            return hit(IntentType.DELETE_TASK, 0.9f,
+                ResolvedIntent.TITLE to titleFrom(cmd.remainder, DELETE_RE, REMINDER_RE, WARNING_RE, LOCATIVE_RE))
+        }
+        if (REMINDER_RE.containsMatchIn(t) || WARNING_RE.containsMatchIn(t)) {
             return hit(IntentType.ADD_REMINDER, if (cmd.time != null) 0.95f else 0.8f,
-                ResolvedIntent.TITLE to titleFrom(cmd.remainder, REMINDER_RE))
+                ResolvedIntent.TITLE to titleFrom(cmd.remainder, REMINDER_RE, WARNING_RE))
         }
         if (HABIT_RE.containsMatchIn(t) && ADD_RE.containsMatchIn(t)) {
             return hit(IntentType.ADD_HABIT, 0.9f, ResolvedIntent.TITLE to titleFrom(cmd.remainder, HABIT_RE, ADD_RE))
@@ -274,6 +280,8 @@ class IntentResolver {
         private val CALENDAR_RE = Regex("""\b(?:taqvim\w*|kalendar\w*|calendar\w*|tadbir\w*)""")
 
         private val REMINDER_RE = Regex("""\b(?:eslat\w*|budilnik\w*|signal qo'y\w*)""")
+        private val WARNING_RE = Regex("""\bogohlantir\w*""")
+        private val LOCATIVE_RE = Regex("""\bdagi\b""")
         private val HABIT_RE = Regex("""\b(?:odat\w*)""")
         private val PENDING_RE = Regex("""\b(?:tugallanmagan|bajarilmagan|qolgan|qilinmagan|kutilayotgan|tugatilmagan|bitmagan)\w*""")
         private val PLAN_RE = Regex("""\b(?:reja\w*\s+tuz\w*|rejala\w*\s+tuz\w*|rejalashtirib ber\w*|kunimni rejala\w*|kunni rejala\w*|jadval\w* tuz\w*|kun tartib\w* tuz\w*|rejani yangila\w*)""")
@@ -290,7 +298,7 @@ class IntentResolver {
 
         private val TASK_NOUN_RE = Regex("""\b(?:vazifa\w*|ish\s+(?=qo'sh)|topshiriq\w*|eslatma\w*|reja\w*|taqvimga|kalendarga)\b""")
         private val PRIORITY_WORDS_RE = Regex("""\b(?:muhim|tezkor|shoshilinch)\b""")
-        private val FILLER_RE = Regex("""\b(?:iltimos|menga|mening|meni|mani|manga|uchun|kuni|bilan birga|deb|ni|ga|qilib|ber|qo'y|kerak|hamma|barcha|ham|endi|bitta|yangi|yana)\b""")
+        private val FILLER_RE = Regex("""\b(?:xullas|iltimos|menga|mening|meni|mani|manga|uchun|kuni|bilan birga|deb|ni|ga|qilib|ber|qo'y|kerak|hamma|barcha|ham|endi|bitta|yangi|yana)\b""")
         private val QUESTION_RE = Regex("""\b(?:nima|qanday|qaysi|mi)\b""")
     }
 }

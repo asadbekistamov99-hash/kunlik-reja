@@ -102,4 +102,24 @@ class IntentResolverTest {
         assertEquals("Stomatolog", r.slot(ResolvedIntent.TITLE))
         assertTrue(r.confidence < 0.75f)
     }
+
+    @Test fun `recognizer slips from real devices`() {
+        val split = resolve("xullas soat 1 0 sartarosh uchun")
+        assertEquals("10:00", split.slot(ResolvedIntent.TIME))
+        assertEquals("Sartarosh", split.slot(ResolvedIntent.TITLE))
+
+        val alarm = resolve("soati 9ga eslatma quy")
+        assertEquals(IntentType.ADD_REMINDER, alarm.type)
+        assertEquals("09:00", alarm.slot(ResolvedIntent.TIME))
+        assertEquals(null, alarm.slot(ResolvedIntent.TITLE)) // executor falls back to "Eslatma"
+    }
+
+    @Test fun `deleting a reminder is not adding one`() {
+        val byTime = resolve("13:00 dagi ogohlantirishni o'chir")
+        assertEquals(IntentType.DELETE_TASK, byTime.type)
+        assertEquals("13:00", byTime.slot(ResolvedIntent.TIME))
+        assertEquals(null, byTime.slot(ResolvedIntent.TITLE))
+        assertEquals(IntentType.DELETE_TASK, resolve("eslatmani o'chir").type)
+        assertEquals(IntentType.ADD_REMINDER, resolve("ertaga soat 9 da eslat").type)
+    }
 }

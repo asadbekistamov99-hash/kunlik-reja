@@ -205,8 +205,20 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
             }
             // Trailing sentence dots are noise; keep dots inside tokens (times, emails, file names).
             val cleaned = sb.toString().replace(Regex("""(?<![\w@])[.\-/]|[.\-/](?![\w])"""), " ")
-            return wordsToNumbers(restoreApostrophes(cleaned.replace(SPACES, " ").trim()))
+            return wordsToNumbers(fixSpeech(restoreApostrophes(cleaned.replace(SPACES, " ").trim())))
         }
+
+        /**
+         * Recognizer slips seen on real devices: "soati 9ga" for "soat 9 ga", "quy" for "qo'y", and a
+         * two-digit hour split into two tokens ("soat 1 0" for "soat 10").
+         */
+        private fun fixSpeech(text: String): String = text
+            .replace(Regex("""\bsoati\b"""), "soat")
+            .replace(Regex("""\bquy\b"""), "qo'y")
+            .replace(Regex("""\bsoat (\d) (\d)\b""")) { m ->
+                val merged = (m.groupValues[1] + m.groupValues[2]).toInt()
+                if (merged in 10..23) "soat $merged" else m.value
+            }
 
         /**
          * Speech recognizers often drop the o'/g' apostrophe ("qosh", "ochir", "korsat"); restore it

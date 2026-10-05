@@ -201,8 +201,8 @@ class JarvisEngineIntegrationTest {
 
     @Test fun `reminder in 30 minutes`() = runBlocking {
         say("30 daqiqadan keyin suv ichishni eslat")
-        val r = db.reminderDao().getAll().single()
-        assertEquals(now.plusMinutes(30).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), r.triggerAtMillis)
+        val t = db.taskDao().getAll().single()
+        assertEquals(now.plusMinutes(30).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), t.timestampMillis)
     }
 
     @Test fun `offline mode never calls the agent and unknown falls back gracefully`() = runBlocking {

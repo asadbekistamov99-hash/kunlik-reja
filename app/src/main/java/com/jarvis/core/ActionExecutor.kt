@@ -163,6 +163,15 @@ class ActionExecutor(
         return if (idx < 0) list.last() else list.getOrNull(idx)
     }
 
+    /** "13:00 dagi eslatmani o'chir": the soonest pending item at the spoken time (and day, if given). */
+    private suspend fun findByTimeSlot(intent: ResolvedIntent): Task? {
+        val time = intent.slot(ResolvedIntent.TIME) ?: return null
+        val date = intent.slot(ResolvedIntent.DATE)
+        return tasks.pendingTasks()
+            .filter { it.timeString == time && (date == null || it.dateString == date) }
+            .minWithOrNull(compareBy<Task> { it.dateString }.thenBy { it.timeString })
+    }
+
     private suspend fun completeTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
         val task = resolveTask(intent, parsed)
         return if (task == null) {
@@ -192,7 +201,7 @@ class ActionExecutor(
     }
 
     private suspend fun deleteTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
-        val task = resolveTask(intent, parsed)
+        val task = resolveTask(intent, parsed) ?: findByTimeSlot(intent)
             ?: return JarvisResponse("O'chiriladigan vazifani topa olmadim.", intent.type, success = false)
         tasks.deleteTask(task)
         return JarvisResponse("\"${task.title}\" o'chirildi.", intent.type)
@@ -290,14 +299,30 @@ class ActionExecutor(
         val title = intent.slot(ResolvedIntent.TITLE) ?: "Eslatma"
         val daily = Regex("""\bhar kuni\b""").containsMatchIn(parsed.body)
         val at = LocalDateTime.of(date, time)
-        reminders.addReminder(
-            Reminder(
-                title = title,
-                message = "Jarvis eslatmasi",
-                triggerAtMillis = at.atZone(zone()).toInstant().toEpochMilli(),
-                repeatIntervalMinutes = if (daily) 1440 else 0
+        val millis = at.atZone(zone()).toInstant().toEpochMilli()
+        if (daily) {
+            reminders.addReminder(
+                Reminder(title = title, message = "Jarvis eslatmasi", triggerAtMillis = millis, repeatIntervalMinutes = 1440)
             )
-        )
+        } else {
+            // One-shot reminders are stored as tasks so they show up in "Vazifalar" and can be
+            // completed, moved or deleted by voice; the task alarm fires exactly at [at].
+            val task = tasks.insertTask(
+                Task(
+                    title = title,
+                    category = TaskCategory.PERSONAL.name,
+                    priority = TaskPriority.MEDIUM.name,
+                    dateString = date.toString(),
+                    timeString = time.format(HHMM),
+                    timestampMillis = millis,
+                    durationMinutes = 15,
+                    hasReminder = true,
+                    reminderMinutesBefore = 0,
+                    voiceNoteText = "Jarvis eslatmasi"
+                )
+            )
+            context.rememberTasks(listOf(task))
+        }
         val whenText = if (daily) "har kuni soat ${time.format(HHMM)} da" else "${dayPhrase(date)} soat ${time.format(HHMM)} da"
         return JarvisResponse("Xo'p, $whenText eslataman: $title.", intent.type)
     }
