@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.3.3] - 2026-10-05
+
+### Changed
+- Rebuilt with the updated `GEMINI_API_KEY` repository secret so the neural voice works out of the box (no key entry needed in Settings).
+
 ## [1.3.2] - 2026-10-05
 
 ### Fixed
