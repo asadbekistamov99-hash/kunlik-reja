@@ -201,10 +201,32 @@ class ActionExecutor(
     }
 
     private suspend fun deleteTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
-        val task = resolveTask(intent, parsed) ?: findByTimeSlot(intent)
-            ?: return JarvisResponse("O'chiriladigan vazifani topa olmadim.", intent.type, success = false)
-        tasks.deleteTask(task)
-        return JarvisResponse("\"${task.title}\" o'chirildi.", intent.type)
+        // An answer that is only a day ("ertaga") must not be searched as a title.
+        val dateOnlyAnswer = parsed.date != null && parsed.remainder.isBlank()
+        val found = (if (dateOnlyAnswer) null else resolveTask(intent, parsed)) ?: findByTimeSlot(intent)
+        if (found != null) {
+            tasks.deleteTask(found)
+            return JarvisResponse("\"${found.title}\" o'chirildi.", intent.type)
+        }
+        // Not found: ask for the day or the exact name instead of giving up.
+        val onDate = intent.slot(ResolvedIntent.DATE)
+            ?.let { d -> tasks.pendingTasks().filter { it.dateString == d } }.orEmpty()
+        if (onDate.size == 1) {
+            tasks.deleteTask(onDate[0])
+            return JarvisResponse("\"${onDate[0].title}\" o'chirildi.", intent.type)
+        }
+        val retried = intent.slot("retry") != null
+        if (retried && onDate.isEmpty()) {
+            return JarvisResponse("Baribir topa olmadim. Vazifalar ro'yxatini ochib ko'ring yoki \"tugallanmagan ishlarimni ko'rsat\" deng.",
+                intent.type, success = false)
+        }
+        val next = intent.copy(slots = intent.slots + ("retry" to "1"))
+        if (onDate.size > 1) {
+            context.rememberTasks(onDate)
+            val list = onDate.take(5).mapIndexed { i, t -> "${i + 1}. ${t.title} (${t.timeString})" }.joinToString(". ")
+            return askFor(next, ResolvedIntent.TITLE, "Bu kunda ${onDate.size} ta ish bor: $list. Qaysi birini o'chiray?")
+        }
+        return askFor(next, ResolvedIntent.TITLE, "Topa olmadim. Qaysi kundagi yoki qanday nomli eslatmani o'chiray?")
     }
 
     private suspend fun rescheduleTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {

@@ -10,6 +10,7 @@ import android.util.Base64
 import android.util.Log
 import com.jarvis.settings.TtsEngineChoice
 import com.jarvis.settings.VoiceGender
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -35,6 +36,14 @@ interface NeuralVoice {
     val id: String
     fun isAvailable(): Boolean
     suspend fun synthesize(text: String, gender: VoiceGender): ByteArray?
+    /** Why the last [synthesize] returned null (HTTP status + the API's message), for diagnostics. */
+    val lastError: String? get() = null
+}
+
+/** "HTTP 400: API key not valid..." from an error response body. */
+internal fun describeHttpError(code: Int, body: String): String {
+    val message = runCatching { JSONObject(body).optJSONObject("error")?.optString("message") }.getOrNull()
+    return "HTTP $code" + (message?.takeIf { it.isNotBlank() }?.let { ": ${it.take(160)}" } ?: "")
 }
 
 /** Gemini native TTS (gemini-2.5-flash-preview-tts): expressive multilingual voices. */
@@ -42,9 +51,12 @@ class GeminiVoice(
     private val http: OkHttpClient,
     private val apiKey: () -> String?,
     private val online: () -> Boolean,
-    private val endpoint: String = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+    private val endpoint: String = DEFAULT_ENDPOINT,
+    /** Tried in order when the model is not found (preview model names get retired). */
+    private val fallbackEndpoints: List<String> = if (endpoint == DEFAULT_ENDPOINT) FALLBACK_ENDPOINTS else emptyList()
 ) : NeuralVoice {
     override val id = "gemini"
+    @Volatile override var lastError: String? = null
     override fun isAvailable() = !apiKey().isNullOrBlank() && online()
 
     override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
@@ -56,19 +68,35 @@ class GeminiVoice(
                 .put("responseModalities", JSONArray().put("AUDIO"))
                 .put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig",
                     JSONObject().put("voiceName", voiceName(gender))))))
-        val request = Request.Builder().url(endpoint).header("x-goog-api-key", key)
-            .post(body.toString().toRequestBody(JSON)).build()
-        http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) { Log.w("GeminiVoice", "HTTP ${resp.code}"); return@use null }
-            val data = JSONObject(resp.body?.string().orEmpty()).optJSONArray("candidates")?.optJSONObject(0)
-                ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
-                ?.optJSONObject("inlineData")?.optString("data")
-            data?.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
+        lastError = null
+        for (url in listOf(endpoint) + fallbackEndpoints) {
+            val request = Request.Builder().url(url).header("x-goog-api-key", key)
+                .post(body.toString().toRequestBody(JSON)).build()
+            val outcome = http.newCall(request).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    lastError = describeHttpError(resp.code, raw)
+                    Log.w("GeminiVoice", lastError.orEmpty())
+                    return@use if (resp.code == 404) null to true else null to false
+                }
+                val data = JSONObject(raw).optJSONArray("candidates")?.optJSONObject(0)
+                    ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
+                    ?.optJSONObject("inlineData")?.optString("data")
+                val pcm = data?.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
+                if (pcm == null) lastError = "Javobda audio yo'q"
+                pcm to false
+            }
+            if (outcome.first != null) return@withContext outcome.first
+            if (!outcome.second) return@withContext null // only a missing model is worth another try
         }
+        null
     }
 
     companion object {
         private val JSON = "application/json; charset=utf-8".toMediaType()
+        private const val BASE = "https://generativelanguage.googleapis.com/v1beta/models/"
+        const val DEFAULT_ENDPOINT = BASE + "gemini-2.5-flash-preview-tts:generateContent"
+        val FALLBACK_ENDPOINTS = listOf(BASE + "gemini-2.5-flash-tts:generateContent", BASE + "gemini-2.5-pro-preview-tts:generateContent")
         fun voiceName(gender: VoiceGender) = if (gender == VoiceGender.MALE) "Charon" else "Kore"
     }
 }
@@ -83,6 +111,7 @@ class OpenAiVoice(
     var speed: Float = 1.0f
 ) : NeuralVoice {
     override val id = "openai"
+    @Volatile override var lastError: String? = null
     override fun isAvailable() = !apiKey().isNullOrBlank() && online()
 
     override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
@@ -96,8 +125,13 @@ class OpenAiVoice(
             .put("instructions", "O'zbek tilida tabiiy, aniq va ravon so'zla, xuddi iliq va ishonchli shaxsiy yordamchidek. Har bir harfni tushunarli talaffuz qil, jumlalar orasida qisqa tabiiy pauza qil, robotdek ovoz chiqarma. Son va vaqtlarni o'zbekcha o'qi.")
         val request = Request.Builder().url(endpoint).header("Authorization", "Bearer $key")
             .post(body.toString().toRequestBody("application/json".toMediaType())).build()
+        lastError = null
         http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) { Log.w("OpenAiVoice", "HTTP ${resp.code}"); null } else resp.body?.bytes()
+            if (!resp.isSuccessful) {
+                lastError = describeHttpError(resp.code, resp.body?.string().orEmpty())
+                Log.w("OpenAiVoice", lastError.orEmpty())
+                null
+            } else resp.body?.bytes()
         }
     }
 
@@ -133,6 +167,9 @@ class TextToSpeechManager(
     @Volatile var activeVoiceName: String = ""
         private set
     @Volatile var lastEngine: String = "device"
+        private set
+    /** Why the neural voices were skipped on the last [speak] (null when one of them spoke). */
+    @Volatile var lastNeuralError: String? = null
         private set
     @Volatile private var openaiTtsModel: String = OpenAiVoice.TTS_MODEL
     @Volatile private var openaiTtsSpeed: Float = 1.0f
@@ -212,28 +249,46 @@ class TextToSpeechManager(
     /** Speaks [text] and suspends until playback finishes (or fails/stops). */
     suspend fun speak(text: String): Boolean {
         if (text.isBlank()) return true
-        pickNeural()?.let { voice ->
+        val failures = mutableListOf<String>()
+        val candidates = neuralCandidates()
+        if (engineChoice != TtsEngineChoice.DEVICE && candidates.isEmpty()) {
+            failures += "kalit kiritilmagan yoki internet yo'q"
+        }
+        // A failing neural voice must not silence the others: try each in turn.
+        for (voice in candidates) {
             _speaking.value = true
-            val pcm = runCatching { withTimeoutOrNull(NEURAL_TIMEOUT_MS) { voice.synthesize(text, gender) } }.getOrNull()
+            val pcm = try {
+                withTimeoutOrNull(NEURAL_TIMEOUT_MS) { voice.synthesize(text, gender) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failures += "${voice.id}: tarmoq xatosi (${e.javaClass.simpleName})"
+                null
+            }
             if (pcm != null && pcm.size > 1000) {
                 lastEngine = voice.id
+                lastNeuralError = null
                 val p = PcmPlayer(NEURAL_SAMPLE_RATE)
                 player = p
                 val ok = try { p.play(pcm) } finally { player = null; _speaking.value = false }
                 return ok
             }
             _speaking.value = false
-            Log.w(TAG, "Neural voice ${voice.id} unavailable, using device voice")
+            if (failures.none { it.startsWith("${voice.id}:") }) {
+                failures += "${voice.id}: ${voice.lastError ?: "javob vaqtida kelmadi (${NEURAL_TIMEOUT_MS / 1000} s)"}"
+            }
+            Log.w(TAG, "Neural voice ${voice.id} failed: ${failures.last()}")
         }
+        lastNeuralError = failures.takeIf { it.isNotEmpty() }?.joinToString("; ")
         lastEngine = "device"
         return speakWithDevice(text)
     }
 
-    private fun pickNeural(): NeuralVoice? = when (engineChoice) {
-        TtsEngineChoice.DEVICE -> null
-        TtsEngineChoice.GEMINI -> neuralVoices.firstOrNull { it.id == "gemini" && it.isAvailable() }
-        TtsEngineChoice.OPENAI -> neuralVoices.firstOrNull { it.id == "openai" && it.isAvailable() }
-        TtsEngineChoice.AUTO -> neuralVoices.firstOrNull { it.isAvailable() }
+    private fun neuralCandidates(): List<NeuralVoice> = when (engineChoice) {
+        TtsEngineChoice.DEVICE -> emptyList()
+        TtsEngineChoice.GEMINI -> neuralVoices.filter { it.id == "gemini" && it.isAvailable() }
+        TtsEngineChoice.OPENAI -> neuralVoices.filter { it.id == "openai" && it.isAvailable() }
+        TtsEngineChoice.AUTO -> neuralVoices.filter { it.isAvailable() }
     }
 
     private suspend fun speakWithDevice(text: String): Boolean {
@@ -272,7 +327,7 @@ class TextToSpeechManager(
     companion object {
         private const val TAG = "JarvisTTS"
         private const val SENTENCE_PAUSE_MS = 180L
-        private const val NEURAL_TIMEOUT_MS = 9_000L
+        private const val NEURAL_TIMEOUT_MS = 15_000L
         const val NEURAL_SAMPLE_RATE = 24_000
         val FALLBACKS = listOf(Locale.forLanguageTag("uz-UZ"), Locale.forLanguageTag("uz"), Locale.forLanguageTag("tr-TR"), Locale.forLanguageTag("ru-RU"))
 

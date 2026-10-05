@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.3.2] - 2026-10-05
+
+### Fixed
+- **Deleting a reminder/task that can't be found now asks instead of failing:** Jarvis asks for the day or the exact name, lists the items on that day, and deletes the one you pick.
+- **Neural voice no longer fails silently.** "Ovozni sinash" now shows the real reason a neural voice was skipped (invalid key, no billing, quota, network, timeout). A failing Gemini voice no longer prevents OpenAI from being tried, a retired Gemini preview model falls back to the next model, and the wait for a neural voice is 15 s instead of 9 s.
+
 ## [1.3.1] - 2026-10-05
 
 ### Fixed

@@ -113,7 +113,8 @@ class JarvisViewModel(private val container: AppContainer) : ViewModel() {
         message("Ovoz: " + when (container.tts.lastEngine) {
             "gemini" -> "Gemini neyron ovozi"
             "openai" -> "OpenAI neyron ovozi"
-            else -> "qurilma ovozi ${container.tts.activeVoiceName}".trim()
+            else -> "qurilma ovozi ${container.tts.activeVoiceName}".trim() +
+                (container.tts.lastNeuralError?.let { ". Neyron ovoz ishlamadi: $it" } ?: "")
         })
     }
 

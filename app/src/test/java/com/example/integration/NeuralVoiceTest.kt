@@ -64,4 +64,23 @@ class NeuralVoiceTest {
         server.enqueue(MockResponse().setResponseCode(429))
         assertNull(GeminiVoice(http, { "gk" }, { true }, server.url("/tts").toString()).synthesize("x", VoiceGender.MALE))
     }
+
+    @Test fun `api errors are reported with the reason and a missing gemini model falls back`() = runBlocking {
+        val bad = GeminiVoice(http, { "gk" }, { true }, server.url("/tts").toString())
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"message":"API key not valid."}}"""))
+        assertNull(bad.synthesize("x", VoiceGender.MALE))
+        assertEquals("HTTP 400: API key not valid.", bad.lastError)
+
+        val openai = OpenAiVoice(http, { "k" }, { true }, server.url("/speech").toString())
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":{"message":"Incorrect API key"}}"""))
+        assertNull(openai.synthesize("x", VoiceGender.MALE))
+        assertEquals("HTTP 401: Incorrect API key", openai.lastError)
+
+        // Retired preview model (404) -> the next model is tried.
+        val b64 = Base64.encodeToString(pcm, Base64.NO_WRAP)
+        val voice = GeminiVoice(http, { "gk" }, { true }, server.url("/old").toString(), listOf(server.url("/new").toString()))
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":{"message":"model not found"}}"""))
+        server.enqueue(MockResponse().setBody("""{"candidates":[{"content":{"parts":[{"inlineData":{"data":"$b64"}}]}}]}"""))
+        assertArrayEquals(pcm, voice.synthesize("x", VoiceGender.MALE))
+    }
 }

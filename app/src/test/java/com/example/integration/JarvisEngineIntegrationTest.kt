@@ -199,6 +199,24 @@ class JarvisEngineIntegrationTest {
         assertTrue(db.taskDao().getAll().single().isCompleted)
     }
 
+    @Test fun `deleting an unknown reminder asks for the day and then deletes it`() = runBlocking {
+        tasks.insertTask(task("Dori", "2026-09-24", "09:00"))
+        val ask = say("eslatmani o'chir")
+        assertTrue(ask.expectsReply)
+        assertEquals(1, db.taskDao().getAll().size)
+        say("ertaga")
+        assertTrue(db.taskDao().getAll().isEmpty())
+    }
+
+    @Test fun `deleting by time finds the item and gives up politely after one question`() = runBlocking {
+        tasks.insertTask(task("Sartarosh", "2026-09-23", "13:00"))
+        say("13:00 dagi ogohlantirishni o'chir")
+        assertTrue(db.taskDao().getAll().isEmpty())
+        assertTrue(say("eslatmani o'chir").expectsReply)
+        val second = say("ertaga")
+        assertFalse(second.success)
+    }
+
     @Test fun `reminder in 30 minutes`() = runBlocking {
         say("30 daqiqadan keyin suv ichishni eslat")
         val t = db.taskDao().getAll().single()
