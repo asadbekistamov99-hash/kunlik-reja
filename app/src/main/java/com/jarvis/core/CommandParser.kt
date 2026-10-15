@@ -23,7 +23,7 @@ data class ParsedCommand(
 /**
  * O'zbek tilidagi tabiiy vaqt, sana, nisbiy muddat ("yarim soatdan keyin",
  * "ertaga kechqurun soat 7 da", "dushanba kuni") va og'zaki sonlarni
- * ("soat to'qqiz yarimda") 100% aniqlikda ajratib oluvchi parser.
+ * ("soat to'qqiz yarimda") ajratib oluvchi parser.
  */
 class CommandParser(
     private val clock: () -> LocalDateTime = { LocalDateTime.now() }

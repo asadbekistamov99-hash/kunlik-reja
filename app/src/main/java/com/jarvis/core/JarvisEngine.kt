@@ -12,7 +12,8 @@ import java.time.LocalTime
 /**
  * Jarvis Ultra markaziy boshqaruv dvigateli.
  * Offlayn parser + IntentResolver hamda Gemini AI agentini birlashtirib,
- * foydalanuvchi aytgan vazifalarni 100% aniqlikda bajarishni kafolatlaydi.
+ * foydalanuvchi aytgan vazifalarni ishonchli bajarishga harakat qiladi. Gemini javob bermasa
+ * (kalit yo'q, offlayn, timeout) offlayn natijaga tayanadi.
  */
 class JarvisEngine(
     private val parser: CommandParser,
@@ -93,7 +94,7 @@ class JarvisEngine(
             )
         }
 
-        // 4. Harakatni ActionExecutor orqali 100% bajaramiz
+        // 4. Harakatni ActionExecutor orqali bajaramiz
         val response = executor.execute(finalIntent, finalParsed)
 
         // 5. Suhbat tarixiga yozib qo'yamiz

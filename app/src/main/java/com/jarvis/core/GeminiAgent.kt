@@ -13,8 +13,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Google Gemini AI asosidagi aqlli buyruq va muloqot agenti.
- * Mo'rt Regex o'rniga to'liq JSON Schema va org.json.JSONObject parseridan foydalanadi.
- * Har qanday murakkab o'zbekcha gapni tushunib, aniq IntentType va slotlarga ajratadi.
+ * Mo'rt Regex o'rniga responseSchema (JSON Schema) va org.json.JSONObject parseridan foydalanadi.
+ * O'zbekcha gaplarni tahlil qilib, IntentType va slotlarga ajratadi. Javob kafolatlanmaydi:
+ * kalit yo'q, offlayn yoki xato bo'lsa null qaytadi va JarvisEngine offlayn natijaga tayanadi.
  */
 class GeminiAgent(
     private val http: OkHttpClient,
@@ -46,6 +47,7 @@ class GeminiAgent(
                 put("temperature", 0.15)
                 put("maxOutputTokens", 512)
                 put("responseMimeType", "application/json")
+                put("responseSchema", responseSchema())
             })
         }
 
@@ -76,7 +78,7 @@ class GeminiAgent(
             "Foydalanuvchi: $u\nJarvis: $a"
         }
         return """
-Sen Jarvis вЂ” o'zbek tilida ravon, tabiiy va aniq ishlovchi shaxsiy ovozli yordamchisan.
+Sen Jarvis — o'zbek tilida ravon, tabiiy va aniq ishlovchi shaxsiy ovozli yordamchisan.
 Hozirgi vaqt: ${context.now}
 Foydalanuvchi profili: ${context.profile}
 Bugungi vazifalar: ${context.todayTasks}
@@ -111,6 +113,43 @@ Qoidalar:
 5. Agar foydalanuvchi vazifa vaqtini o'zgartirishni so'rasa -> RESCHEDULE_TASK.
 6. Agar foydalanuvchi erkin savol bersa yoki suhbat qursa -> UNKNOWN va "reply" slotiga o'zbek tilida aniq, ravon, qisqa javob yoz.
 """.trimIndent()
+    }
+
+    /** Gemini javobini IntentType enum va slot maydonlari bilan cheklovchi JSON Schema. */
+    private fun responseSchema(): JSONObject {
+        fun str(description: String) = JSONObject()
+            .put("type", "STRING")
+            .put("description", description)
+
+        val slots = JSONObject()
+            .put("type", "OBJECT")
+            .put("description", "Faqat aytilgan qiymatlar; aytilmagan maydonlarni yozma")
+            .put("properties", JSONObject()
+                .put("title", str("Vazifa, eslatma, odat yoki uchrashuvning toza nomi"))
+                .put("date", str("YYYY-MM-DD"))
+                .put("time", str("HH:MM 24-soatlik"))
+                .put("durationMinutes", str("Daqiqa soni"))
+                .put("query", str("Qidiruv so'zi"))
+                .put("name", str("Kontakt ismi"))
+                .put("fact", str("Eslab qolinadigan ma'lumot"))
+                .put("to", str("Email qabul qiluvchi"))
+                .put("subject", str("Email mavzusi"))
+                .put("body", str("Email matni"))
+                .put("reply", str("Foydalanuvchiga qisqa o'zbekcha javob")))
+
+        val intentNames = JSONArray()
+        IntentType.values().forEach { intentNames.put(it.name) }
+
+        return JSONObject()
+            .put("type", "OBJECT")
+            .put("properties", JSONObject()
+                .put("intent", JSONObject()
+                    .put("type", "STRING")
+                    .put("enum", intentNames))
+                .put("confidence", JSONObject().put("type", "NUMBER"))
+                .put("slots", slots)
+                .put("reply", str("Foydalanuvchiga qisqa o'zbekcha javob")))
+            .put("required", JSONArray().put("intent").put("confidence"))
     }
 
     private fun parseGeminiResponse(rawBody: String): ResolvedIntent? {

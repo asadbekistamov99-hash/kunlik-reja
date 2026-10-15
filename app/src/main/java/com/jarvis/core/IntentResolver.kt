@@ -44,6 +44,26 @@ data class ResolvedIntent(
     val source: String = "offline"
 ) {
     fun slot(name: String): String? = slots[name]?.takeIf { it.isNotBlank() }
+
+    companion object {
+        const val TITLE = "title"
+        const val DATE = "date"
+        const val TIME = "time"
+        const val DURATION = "duration"
+        const val QUERY = "query"
+        const val CONTACT = "contact"
+        const val EXTENSION = "extension"
+        const val VIDEO = "video"
+        const val TO = "to"
+        const val SUBJECT = "subject"
+        const val BODY = "body"
+        const val MEMORY_TYPE = "memory_type"
+        const val CONTENT = "content"
+        const val PRIORITY = "priority"
+        const val CATEGORY = "category"
+        const val ANSWER = "answer"
+        const val DEADLINE = "deadline"
+    }
 }
 
 /**
@@ -53,6 +73,18 @@ data class ResolvedIntent(
 class IntentResolver {
 
     fun resolve(cmd: ParsedCommand): ResolvedIntent {
+        // Parser topgan sana/vaqt/davomiylik har qanday niyat slotlariga o'tadi (ActionExecutor ishlatadi)
+        val parsedSlots = buildMap {
+            cmd.date?.let { put(ResolvedIntent.DATE, it.toString()) }
+            cmd.time?.let { put(ResolvedIntent.TIME, "%02d:%02d".format(it.hour, it.minute)) }
+            cmd.durationMinutes?.let { put(ResolvedIntent.DURATION, it.toString()) }
+            cmd.deadline?.let { put(ResolvedIntent.DEADLINE, it.toString()) }
+        }
+        val intent = resolveByRules(cmd)
+        return intent.copy(slots = parsedSlots + intent.slots)
+    }
+
+    private fun resolveByRules(cmd: ParsedCommand): ResolvedIntent {
         val body = cmd.body.trim().lowercase(Locale.ROOT)
         if (body.isBlank()) {
             return if (cmd.hasWakeWord) {
@@ -201,7 +233,7 @@ class IntentResolver {
             return ResolvedIntent(IntentType.ADD_REMINDER, 0.96f, mapOf("title" to title))
         }
 
-        // 16. Vazifa qo'shish (Add Task) вЂ” aniq kalit so'zlar yoki vaqt/sana + harakat bo'lganda
+        // 16. Vazifa qo'shish (Add Task) — aniq kalit so'zlar yoki vaqt/sana + harakat bo'lganda
         if (
             body.contains("vazifa qo'sh") ||
             body.contains("rejaga qo'sh") ||
@@ -221,19 +253,25 @@ class IntentResolver {
     }
 
     private fun extractCleanTitle(raw: String): String {
+        // Boshidagi murojaat so'zlari ("iltimos menga ...") ketma-ket kelishi mumkin
+        val leadingFiller = Regex("^(?:iltimos|jarvis|menga|shu|yangi)\\s+", RegexOption.IGNORE_CASE)
         val noisePatterns = listOf(
-            Regex("^(?:iltimos|jarvis|menga|shu|yangi)\\s+", RegexOption.IGNORE_CASE),
             Regex("\\b(?:vazifani|vazifa|rejaga|rejani|eslatmani|eslatma|jadvalga)\\b", RegexOption.IGNORE_CASE),
             Regex("\\b(?:qo'shib\\s+qo'y|yozib\\s+qo'y|eslatib\\s+qo'y|esimga\\s+sol|qo'sh|yarat|o'rnat|bajarildi\\s+deb\\s+belgila|bajarildi|bajardim|bitdi|o'chirib\\s+tashla|o'chir|ko'chirib\\s+qo'y|ko'chir)\\b", RegexOption.IGNORE_CASE),
             Regex("\\b(?:deb|degan|nomli)\\b", RegexOption.IGNORE_CASE)
         )
-        var result = raw
+        var result = raw.trim()
+        while (leadingFiller.containsMatchIn(result)) {
+            result = leadingFiller.replace(result, "")
+        }
         for (p in noisePatterns) {
             result = result.replace(p, " ")
         }
         result = result
             .replace(Regex("\\s+"), " ")
             .trim()
+            // "... borishni vazifa qilib qo'sh qo'y" -> "... borishni qilib qo'y" -> "... borishni"
+            .replace(Regex("(?:\\s+(?:qilib|qo'y|qo'sh))+$", RegexOption.IGNORE_CASE), "")
             .trim(',', '.', '!', '?', '-', ':')
 
         if (result.endsWith("shni") && result.length > 6) {

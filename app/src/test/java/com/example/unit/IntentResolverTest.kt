@@ -102,4 +102,12 @@ class IntentResolverTest {
         assertEquals("Stomatolog", r.slot(ResolvedIntent.TITLE))
         assertTrue(r.confidence < 0.75f)
     }
+
+    @Test fun `long spoken request is trimmed to a clean task title`() {
+        val r = resolve("Iltimos menga ertaga soat 9 da stomatologga borishni vazifa qilib qo'shib qo'y")
+        assertEquals(IntentType.ADD_TASK, r.type)
+        assertEquals("Stomatologga borish", r.slot(ResolvedIntent.TITLE))
+        assertEquals("2026-09-24", r.slot(ResolvedIntent.DATE))
+        assertEquals("09:00", r.slot(ResolvedIntent.TIME))
+    }
 }

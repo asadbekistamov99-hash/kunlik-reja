@@ -6,20 +6,20 @@ import kotlin.math.min
 /**
  * Kuchaytirilgan O'zbek tili imlo, fonetik xatolar va kirill-lotin konvertori.
  * STT (Google, Whisper, Vosk) tomonidan noto'g'ri eshitilgan so'zlarni
- * 100% aniqlikdagi buyruq shakliga keltiradi.
+ * buyruq shakliga keltirishga harakat qiladi.
  */
 object SpellCorrector {
 
     private val apostrophes = charArrayOf('\u2018', '\u2019', '`', '\u02BB', '\u02BC', '\u00B4', '\u02B9')
 
     private val cyrillicToLatinMap = mapOf(
-        'Р°' to "a", 'Р±' to "b", 'РІ' to "v", 'Рі' to "g", 'Рґ' to "d",
-        'Рµ' to "e", 'С‘' to "yo", 'Р¶' to "j", 'Р·' to "z", 'Рё' to "i",
-        'Р№' to "y", 'Рє' to "k", 'Р»' to "l", 'Рј' to "m", 'РЅ' to "n",
-        'Рѕ' to "o", 'Рї' to "p", 'СЂ' to "r", 'СЃ' to "s", 'С‚' to "t",
-        'Сѓ' to "u", 'С„' to "f", 'С…' to "x", 'С†' to "ts", 'С‡' to "ch",
-        'С€' to "sh", 'СЉ' to "'", 'СЊ' to "", 'СЌ' to "e", 'СЋ' to "yu",
-        'СЏ' to "ya", 'Сћ' to "o'", 'Т›' to "q", 'Т“' to "g'", 'Ті' to "h"
+        'а' to "a", 'б' to "b", 'в' to "v", 'г' to "g", 'д' to "d",
+        'е' to "e", 'ё' to "yo", 'ж' to "j", 'з' to "z", 'и' to "i",
+        'й' to "y", 'к' to "k", 'л' to "l", 'м' to "m", 'н' to "n",
+        'о' to "o", 'п' to "p", 'р' to "r", 'с' to "s", 'т' to "t",
+        'у' to "u", 'ф' to "f", 'х' to "x", 'ц' to "ts", 'ч' to "ch",
+        'ш' to "sh", 'ъ' to "'", 'ь' to "", 'э' to "e", 'ю' to "yu",
+        'я' to "ya", 'ў' to "o'", 'қ' to "q", 'ғ' to "g'", 'ҳ' to "h"
     )
 
     private val directReplacements = mapOf(
