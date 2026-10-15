@@ -113,9 +113,9 @@ class GoogleApisTest {
         }
     }
 
-    @Test fun `gemini function call maps to intent`() = runBlocking {
+    @Test fun `gemini json answer maps to intent slots`() = runBlocking {
         val agent = GeminiAgent(http, { "key" }, { true }, server.url("/gemini").toString())
-        server.enqueue(MockResponse().setBody("""{"candidates":[{"content":{"parts":[{"functionCall":{"name":"add_task","args":{"title":"Doktor qabuli","date":"2026-09-25","time":"16:00","duration_minutes":45}}}]}}]}"""))
+        server.enqueue(MockResponse().setBody("""{"candidates":[{"content":{"parts":[{"text":"{\"intent\":\"ADD_TASK\",\"confidence\":0.93,\"slots\":{\"title\":\"Doktor qabuli\",\"date\":\"2026-09-25\",\"time\":\"16:00\",\"durationMinutes\":\"45\"}}"}]}}]}"""))
         val ctx = AgentContext(LocalDateTime.of(2026, 9, 23, 10, 0), "Ism: Asadbek", "", listOf("USER" to "salom", "MODEL" to "Assalomu alaykum"))
         val intent = agent.decide("juma kuni soat 4 da doktorga yozil", ctx)!!
         assertEquals(IntentType.ADD_TASK, intent.type)
@@ -124,26 +124,30 @@ class GoogleApisTest {
         assertEquals("45", intent.slot(ResolvedIntent.DURATION))
         val req = server.takeRequest()
         assertEquals("key", req.getHeader("x-goog-api-key"))
-        val sent = JSONObject(req.body.readUtf8())
-        assertEquals(3, sent.getJSONArray("contents").length())
-        assertTrue(sent.getJSONArray("tools").getJSONObject(0).getJSONArray("functionDeclarations").length() >= 20)
+        val gen = JSONObject(req.body.readUtf8()).getJSONObject("generationConfig")
+        assertEquals("application/json", gen.getString("responseMimeType"))
+        assertTrue(gen.has("responseSchema"))
     }
 
-    @Test fun `gemini text answer and failures`() = runBlocking {
+    @Test fun `gemini reply and failures`() = runBlocking {
         val agent = GeminiAgent(http, { "key" }, { true }, server.url("/gemini").toString())
         val ctx = AgentContext(LocalDateTime.now(), "", "", emptyList())
-        server.enqueue(MockResponse().setBody("""{"candidates":[{"content":{"parts":[{"text":"Toshkent O'zbekiston poytaxti."}]}}]}"""))
+        server.enqueue(MockResponse().setBody("""{"candidates":[{"content":{"parts":[{"text":"{\"intent\":\"UNKNOWN\",\"confidence\":0.5,\"slots\":{\"reply\":\"Toshkent O'zbekiston poytaxti.\"}}"}]}}]}"""))
         assertEquals("Toshkent O'zbekiston poytaxti.", agent.decide("poytaxt qaysi", ctx)!!.slot(ResolvedIntent.ANSWER))
         server.enqueue(MockResponse().setResponseCode(500))
         assertNull(agent.decide("x", ctx))
+        server.enqueue(MockResponse().setBody("""{"candidates":[{"content":{"parts":[{"text":"oddiy matn, JSON emas"}]}}]}"""))
+        assertNull(agent.decide("y", ctx))
         val noKey = GeminiAgent(http, { "" }, { true }, server.url("/gemini").toString())
         assertTrue(!noKey.isAvailable())
         val offline = GeminiAgent(http, { "key" }, { false }, server.url("/gemini").toString())
         assertTrue(!offline.isAvailable())
     }
 
-    @Test fun `unknown function name is ignored`() {
-        assertNull(GeminiAgent.fromFunctionCall("rm_rf", JSONObject()))
-        assertNull(GeminiAgent.parseResponse("""{"candidates":[]}"""))
+    @Test fun `unknown intent name falls back to UNKNOWN`() = runBlocking {
+        val agent = GeminiAgent(http, { "key" }, { true }, server.url("/gemini").toString())
+        server.enqueue(MockResponse().setBody("""{"candidates":[{"content":{"parts":[{"text":"{\"intent\":\"rm_rf\",\"confidence\":0.9}"}]}}]}"""))
+        val ctx = AgentContext(LocalDateTime.now(), "", "", emptyList())
+        assertEquals(IntentType.UNKNOWN, agent.decide("o'chirib yubor", ctx)!!.type)
     }
 }

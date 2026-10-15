@@ -187,6 +187,10 @@ Qoidalar:
         if (topReply.isNotEmpty() && !slotsMap.containsKey("reply")) {
             slotsMap["reply"] = topReply
         }
+        // Xom kalitlar (engine o'qiydi) bilan birga ilova slot konstantalariga ham yoziladi
+        for ((schemaKey, slotName) in SLOT_ALIASES) {
+            slotsMap[schemaKey]?.let { slotsMap.putIfAbsent(slotName, it) }
+        }
 
         return ResolvedIntent(
             type = intentType,
@@ -198,5 +202,17 @@ Qoidalar:
 
     companion object {
         const val MODEL = "gemini-2.5-flash"
+
+        /** Schema kaliti -> ActionExecutor o'qiydigan slot nomi. */
+        private val SLOT_ALIASES = mapOf(
+            "durationMinutes" to ResolvedIntent.DURATION,
+            "name" to ResolvedIntent.CONTACT,
+            "fact" to ResolvedIntent.CONTENT,
+            "reply" to ResolvedIntent.ANSWER,
+            "query" to ResolvedIntent.QUERY,
+            "to" to ResolvedIntent.TO,
+            "subject" to ResolvedIntent.SUBJECT,
+            "body" to ResolvedIntent.BODY
+        )
     }
 }

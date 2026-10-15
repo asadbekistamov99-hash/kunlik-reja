@@ -19,7 +19,7 @@ android {
     // Kept stable so existing "Kun Tartibi" installs upgrade in place and keep their data.
     applicationId = "com.aistudio.kuntartibi.xqpzly"
     minSdk = 26
-    targetSdk = 35
+    targetSdk = 36
     versionCode = 121
     versionName = "1.2.1"
 
