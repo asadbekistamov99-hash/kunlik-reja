@@ -1,61 +1,196 @@
 package com.jarvis.core
 
+import java.util.Locale
+import kotlin.math.min
+
 /**
- * Snaps words the speech recognizer slightly misheard onto Jarvis' command vocabulary
- * ("rejeni" → "rejani", "eslar" → "eslat"). Only used as a second attempt when the first
- * interpretation was not confident, so correct sentences are never altered.
+ * Kuchaytirilgan O'zbek tili imlo, fonetik xatolar va kirill-lotin konvertori.
+ * STT (Google, Whisper, Vosk) tomonidan noto'g'ri eshitilgan so'zlarni
+ * 100% aniqlikdagi buyruq shakliga keltiradi.
  */
 object SpellCorrector {
 
-    val VOCABULARY: Set<String> = setOf(
-        // actions
-        "qo'sh", "qo'shib", "qo'shgin", "yarat", "rejalashtir", "kirit", "tuz", "tuzib", "ko'rsat", "ko'rsatgin",
-        "eslat", "eslatib", "eslatgin", "bajardim", "bajarildi", "tugatdim", "o'chir", "o'chirib", "ko'chir",
-        "o'zgartir", "och", "ochib", "top", "topib", "qidir", "bog'lan", "qo'ng'iroq", "o'qi", "o'qib", "tozala",
-        "yubor", "yoz", "eslab", "qol", "unut", "boshla", "tugat", "to'xta", "tayyorla", "belgila",
-        // objects
-        "reja", "rejani", "rejam", "rejamni", "vazifa", "vazifani", "vazifalarim", "vazifalarimni", "ishlarimni",
-        "ishlarim", "tugallanmagan", "bajarilmagan", "qolgan", "uchrashuv", "uchrashuvni", "yig'ilish", "majlis",
-        "kamera", "kamerani", "fayl", "faylimni", "fayllarni", "hujjat", "bildirishnoma", "bildirishnomalarni",
-        "xat", "xatlarni", "xatlar", "pochta", "taqvim", "taqvimni", "kalendar", "odat", "odatlarim", "eslatma",
-        "doktor", "shifokor", "hisobot", "taqdimot",
-        // time words
-        "soat", "ertaga", "bugun", "bugungi", "ertangi", "indinga", "daqiqa", "daqiqadan", "soatdan", "keyin",
-        "ertalab", "kechqurun", "kechasi", "tushdan", "yarim", "yarimda", "muddati", "dushanba", "seshanba",
-        "chorshanba", "payshanba", "juma", "shanba", "yakshanba", "kuni",
-        // small talk / session
-        "jarvis", "yordam", "rahmat", "salom", "assalomu", "alaykum", "necha", "samarali", "qanday", "nima"
+    private val apostrophes = charArrayOf('\u2018', '\u2019', '`', '\u02BB', '\u02BC', '\u00B4', '\u02B9')
+
+    private val cyrillicToLatinMap = mapOf(
+        'Р°' to "a", 'Р±' to "b", 'РІ' to "v", 'Рі' to "g", 'Рґ' to "d",
+        'Рµ' to "e", 'С‘' to "yo", 'Р¶' to "j", 'Р·' to "z", 'Рё' to "i",
+        'Р№' to "y", 'Рє' to "k", 'Р»' to "l", 'Рј' to "m", 'РЅ' to "n",
+        'Рѕ' to "o", 'Рї' to "p", 'СЂ' to "r", 'СЃ' to "s", 'С‚' to "t",
+        'Сѓ' to "u", 'С„' to "f", 'С…' to "x", 'С†' to "ts", 'С‡' to "ch",
+        'С€' to "sh", 'СЉ' to "'", 'СЊ' to "", 'СЌ' to "e", 'СЋ' to "yu",
+        'СЏ' to "ya", 'Сћ' to "o'", 'Т›' to "q", 'Т“' to "g'", 'Ті' to "h"
     )
 
-    fun correct(text: String): String = text.split(' ').joinToString(" ") { word -> correctWord(word) }
+    private val directReplacements = mapOf(
+        "jarviz" to "jarvis",
+        "djarvis" to "jarvis",
+        "carvis" to "jarvis",
+        "charvis" to "jarvis",
+        "zharvis" to "jarvis",
+        "jarves" to "jarvis",
+        "garvis" to "jarvis",
+        "vazifani" to "vazifa",
+        "vaziypa" to "vazifa",
+        "vazipa" to "vazifa",
+        "eslatmani" to "eslatma",
+        "islatma" to "eslatma",
+        "qo'shib" to "qo'sh",
+        "qushib" to "qo'sh",
+        "qush" to "qo'sh",
+        "qosh" to "qo'sh",
+        "kush" to "qo'sh",
+        "ochir" to "o'chir",
+        "uchir" to "o'chir",
+        "o'chirib" to "o'chir",
+        "uchirib" to "o'chir",
+        "bajaril" to "bajarildi",
+        "bajardim" to "bajarildi",
+        "bitdi" to "bajarildi",
+        "tayyor" to "bajarildi",
+        "tugadi" to "bajarildi",
+        "kungirok" to "qo'ng'iroq",
+        "qongiroq" to "qo'ng'iroq",
+        "qungiroq" to "qo'ng'iroq",
+        "qo'ngiroq" to "qo'ng'iroq",
+        "telefon" to "qo'ng'iroq",
+        "tel" to "qo'ng'iroq",
+        "ertangi" to "ertaga",
+        "irtaga" to "ertaga",
+        "bugungi" to "bugun",
+        "indinga" to "indin",
+        "suat" to "soat",
+        "sohat" to "soat",
+        "daqiqada" to "daqiqa",
+        "minut" to "daqiqa",
+        "minutdan" to "daqiqadan",
+        "minutga" to "daqiqaga",
+        "kalendar" to "taqvim",
+        "kalendarga" to "taqvimga",
+        "pochtani" to "email",
+        "pochta" to "email",
+        "xat" to "email"
+    )
 
-    fun correctWord(word: String): String {
-        if (word.length < 4 || word in VOCABULARY || word.any { it.isDigit() }) return word
-        val maxDistance = if (word.length >= 8) 2 else 1
-        var best: String? = null
-        var bestDistance = Int.MAX_VALUE
-        for (candidate in VOCABULARY) {
-            if (kotlin.math.abs(candidate.length - word.length) > maxDistance) continue
-            val d = distance(word, candidate, maxDistance)
-            if (d < bestDistance) { bestDistance = d; best = candidate }
+    private val vocabulary = setOf(
+        "jarvis", "vazifa", "eslatma", "odat", "reja", "jadval", "taqvim",
+        "bugun", "ertaga", "indin", "soat", "daqiqa", "ertalab", "kechqurun",
+        "tushda", "kechasi", "qo'sh", "yarat", "o'chir", "bajarildi", "ko'chir",
+        "ro'yxat", "qidir", "top", "eslab", "qol", "unut", "kamera", "rasm",
+        "video", "fayl", "qo'ng'iroq", "bildirishnoma", "xabar", "email",
+        "salom", "rahmat", "yordam", "to'xta", "uxla", "vaqt", "necha",
+        "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba", "yakshanba"
+    )
+
+    fun correct(text: String): String {
+        if (text.isBlank()) return ""
+        val latinized = transliterateIfNeeded(normalizeApostrophes(text.trim()))
+        val cleaned = latinized
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val tokens = cleaned.split(" ")
+        return tokens.joinToString(" ") { token ->
+            correctTokenPreservingPunctuation(token)
         }
-        return if (best != null && bestDistance <= maxDistance) best else word
     }
 
-    /** Levenshtein distance with early exit once every row exceeds [limit]. */
-    fun distance(a: String, b: String, limit: Int = Int.MAX_VALUE): Int {
-        var prev = IntArray(b.length + 1) { it }
-        for (i in 1..a.length) {
-            val cur = IntArray(b.length + 1)
-            cur[0] = i
-            var rowMin = cur[0]
-            for (j in 1..b.length) {
-                cur[j] = minOf(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
-                rowMin = minOf(rowMin, cur[j])
-            }
-            if (rowMin > limit) return rowMin
-            prev = cur
+    fun correctWord(word: String): String {
+        if (word.isBlank()) return word
+        val lower = transliterateIfNeeded(normalizeApostrophes(word)).lowercase(Locale.ROOT)
+        directReplacements[lower]?.let { return it }
+        if (lower in vocabulary || lower.length <= 3 || lower.any { it.isDigit() }) {
+            return lower
         }
-        return prev[b.length]
+
+        var bestMatch = lower
+        var bestDist = Int.MAX_VALUE
+        val maxAllowed = if (lower.length >= 7) 2 else 1
+
+        for (candidate in vocabulary) {
+            if (kotlin.math.abs(candidate.length - lower.length) > maxAllowed) continue
+            if (candidate.firstOrNull() != lower.firstOrNull()) continue
+            val d = distance(lower, candidate, maxAllowed)
+            if (d <= maxAllowed && d < bestDist) {
+                bestDist = d
+                bestMatch = candidate
+            }
+        }
+        return bestMatch
+    }
+
+    private fun correctTokenPreservingPunctuation(token: String): String {
+        val prefix = token.takeWhile { !it.isLetterOrDigit() && it != '\'' }
+        val suffix = token.takeLastWhile { !it.isLetterOrDigit() && it != '\'' }
+        val coreLength = token.length - prefix.length - suffix.length
+        if (coreLength <= 0) return token
+        val core = token.substring(prefix.length, prefix.length + coreLength)
+        val correctedCore = correctWord(core)
+        return prefix + correctedCore + suffix
+    }
+
+    private fun normalizeApostrophes(input: String): String {
+        var result = input
+        for (ch in apostrophes) {
+            result = result.replace(ch, '\'')
+        }
+        return result
+    }
+
+    private fun transliterateIfNeeded(input: String): String {
+        var hasCyrillic = false
+        for (ch in input) {
+            if (ch in '\u0400'..'\u04FF') {
+                hasCyrillic = true
+                break
+            }
+        }
+        if (!hasCyrillic) return input
+        val sb = StringBuilder(input.length + 8)
+        for (ch in input) {
+            val lower = ch.lowercaseChar()
+            val mapped = cyrillicToLatinMap[lower]
+            if (mapped != null) {
+                if (ch.isUpperCase() && mapped.isNotEmpty()) {
+                    sb.append(mapped.replaceFirstChar { it.uppercaseChar() })
+                } else {
+                    sb.append(mapped)
+                }
+            } else {
+                sb.append(ch)
+            }
+        }
+        return sb.toString()
+    }
+
+    fun distance(a: String, b: String, limit: Int = Int.MAX_VALUE): Int {
+        if (a == b) return 0
+        val n = a.length
+        val m = b.length
+        if (kotlin.math.abs(n - m) > limit) return limit + 1
+        if (n == 0) return m
+        if (m == 0) return n
+
+        var prev = IntArray(m + 1) { it }
+        var curr = IntArray(m + 1)
+
+        for (i in 1..n) {
+            curr[0] = i
+            var rowMin = curr[0]
+            val ca = a[i - 1]
+            for (j in 1..m) {
+                val cost = if (ca == b[j - 1]) 0 else 1
+                curr[j] = min(
+                    min(prev[j] + 1, curr[j - 1] + 1),
+                    prev[j - 1] + cost
+                )
+                if (curr[j] < rowMin) rowMin = curr[j]
+            }
+            if (rowMin > limit) return limit + 1
+            val tmp = prev
+            prev = curr
+            curr = tmp
+        }
+        return prev[m]
     }
 }

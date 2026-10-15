@@ -2,340 +2,446 @@ package com.jarvis.voice
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
 import android.os.Bundle
+import android.speech.tts.TextToSpeech as AndroidTts
 import android.speech.tts.UtteranceProgressListener
-import android.util.Base64
-import android.util.Log
-import com.jarvis.settings.TtsEngineChoice
-import com.jarvis.settings.VoiceGender
+import android.speech.tts.Voice
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import android.speech.tts.TextToSpeech as AndroidTts
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 
-/** A cloud voice that turns text into 24 kHz 16-bit mono PCM. */
+enum class VoiceGender { MALE, FEMALE }
+enum class TtsEngineChoice { ANDROID_DEFAULT, OPENAI_NEURAL, SYSTEM_CUSTOM }
+
 interface NeuralVoice {
     val id: String
     fun isAvailable(): Boolean
     suspend fun synthesize(text: String, gender: VoiceGender): ByteArray?
 }
 
-/** Gemini native TTS (gemini-2.5-flash-preview-tts): expressive multilingual voices. */
-class GeminiVoice(
-    private val http: OkHttpClient,
-    private val apiKey: () -> String?,
-    private val online: () -> Boolean,
-    private val endpoint: String = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
-) : NeuralVoice {
-    override val id = "gemini"
-    override fun isAvailable() = !apiKey().isNullOrBlank() && online()
-
-    override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
-        val key = apiKey() ?: return@withContext null
-        val body = JSONObject()
-            .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
-                "O'zbek tilida tabiiy, iliq va ravon, xuddi suhbatdoshdek gapiring: $text")))))
-            .put("generationConfig", JSONObject()
-                .put("responseModalities", JSONArray().put("AUDIO"))
-                .put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig",
-                    JSONObject().put("voiceName", voiceName(gender))))))
-        val request = Request.Builder().url(endpoint).header("x-goog-api-key", key)
-            .post(body.toString().toRequestBody(JSON)).build()
-        http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) { Log.w("GeminiVoice", "HTTP ${resp.code}"); return@use null }
-            val data = JSONObject(resp.body?.string().orEmpty()).optJSONArray("candidates")?.optJSONObject(0)
-                ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
-                ?.optJSONObject("inlineData")?.optString("data")
-            data?.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
-        }
-    }
-
-    companion object {
-        private val JSON = "application/json; charset=utf-8".toMediaType()
-        fun voiceName(gender: VoiceGender) = if (gender == VoiceGender.MALE) "Charon" else "Kore"
-    }
-}
-
-/** OpenAI TTS (gpt-4o-mini-tts) with style instructions; returns raw 24 kHz PCM. */
+/**
+ * Kuchaytirilgan OpenAI Neural Voice:
+ * - O'zbek tili talaffuzi, urg'usi va intonatsiyasi uchun boyitilgan yo'riqnoma
+ * - Ovoz ohangini yumshoq va aniq eshittirish
+ */
 class OpenAiVoice(
     private val http: OkHttpClient,
     private val apiKey: () -> String?,
     private val online: () -> Boolean,
-    private val endpoint: String = "https://api.openai.com/v1/audio/speech",
-    var model: String = TTS_MODEL,
-    var speed: Float = 1.0f
+    private val endpoint: String = "https://api.openai.com/v1/audio/speech"
 ) : NeuralVoice {
-    override val id = "openai"
-    override fun isAvailable() = !apiKey().isNullOrBlank() && online()
+    override val id: String = "openai"
 
-    override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
-        val key = apiKey() ?: return@withContext null
-        val body = JSONObject()
-            .put("model", model)
-            .put("voice", voiceName(gender))
-            .put("input", text)
-            .put("response_format", "pcm")
-            .put("speed", speed.toDouble())
-            .put("instructions", "O'zbek tilida tabiiy, aniq va ravon so'zla, xuddi iliq va ishonchli shaxsiy yordamchidek. Har bir harfni tushunarli talaffuz qil, jumlalar orasida qisqa tabiiy pauza qil, robotdek ovoz chiqarma. Son va vaqtlarni o'zbekcha o'qi.")
-        val request = Request.Builder().url(endpoint).header("Authorization", "Bearer $key")
-            .post(body.toString().toRequestBody("application/json".toMediaType())).build()
-        http.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) { Log.w("OpenAiVoice", "HTTP ${resp.code}"); null } else resp.body?.bytes()
-        }
+    @Volatile
+    var model: String = "gpt-4o-mini-tts"
+
+    @Volatile
+    var speed: Float = 1.0f
+
+    override fun isAvailable(): Boolean {
+        val key = apiKey()?.trim()
+        return !key.isNullOrEmpty() && online()
     }
 
-    companion object {
-        /** Higher-fidelity TTS model; upgrade point for future voices. */
-        const val TTS_MODEL = "gpt-4o-mini-tts"
-        fun voiceName(gender: VoiceGender) = if (gender == VoiceGender.MALE) "onyx" else "nova"
+    override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
+        val key = apiKey()?.trim()
+        if (key.isNullOrEmpty() || !online() || text.isBlank()) return@withContext null
+
+        val voiceName = when (gender) {
+            VoiceGender.MALE -> "onyx"
+            VoiceGender.FEMALE -> "nova"
+        }
+
+        val payload = JSONObject().apply {
+            put("model", model)
+            put("voice", voiceName)
+            put("input", text)
+            put("response_format", "pcm")
+            put("speed", speed.coerceIn(0.75f, 1.35f).toDouble())
+            put(
+                "instructions",
+                "Sof adabiy o'zbek tilida juda ravon, aniq, tabiiy intonatsiya va iliq ovoz ohangi bilan gapir. " +
+                    "So'z oxiridagi urg'ularni to'g'ri qo'y, vergulda yengil nafas pauzasi qil, savol gaplarda " +
+                    "tabiiy savol ohangini ber, xuddi aqlli va ishonchli Jarvis yordamchisidek dona-dona so'zla."
+            )
+        }
+
+        val req = Request.Builder()
+            .url(endpoint)
+            .header("Authorization", "Bearer $key")
+            .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        runCatching {
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext null
+                resp.body?.bytes()
+            }
+        }.getOrNull()
     }
 }
 
 /**
- * Jarvis' voice.
- *
- * Neural cloud voices (Gemini / OpenAI) are used when chosen and available — they are the natural,
- * fluent option with a true male/female voice. Otherwise the best installed device voice is used:
- * Uzbek if present, else Turkish (closest Latin phonetics), Russian, then the system default; the
- * highest-quality voice matching the chosen gender is selected, pitch adapts to the gender when the
- * engine doesn't label voices, and sentences get short natural pauses.
+ * O'zbekcha matnni tabiiy nutqqa tayyorlovchi (Orfoepik & Prosody Pre-processor)
+ * hamda AudioFocus va dinamik ovoz kuchaytirishga ega TextToSpeechManager.
  */
 class TextToSpeechManager(
     private val context: Context,
     private val neuralVoices: List<NeuralVoice> = emptyList()
 ) : AndroidTts.OnInitListener {
 
-    private val tts = AndroidTts(context.applicationContext, this)
+    private var tts: AndroidTts? = null
     private val ready = CompletableDeferred<Boolean>()
-    private val pending = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
-    private val _speaking = MutableStateFlow(false)
-    val speaking: StateFlow<Boolean> = _speaking.asStateFlow()
+    private val stopped = AtomicBoolean(false)
 
-    @Volatile var activeLocale: Locale? = null
-        private set
-    @Volatile var activeVoiceName: String = ""
-        private set
-    @Volatile var lastEngine: String = "device"
-        private set
-    @Volatile private var openaiTtsModel: String = OpenAiVoice.TTS_MODEL
-    @Volatile private var openaiTtsSpeed: Float = 1.0f
+    @Volatile
+    private var activeTrack: AudioTrack? = null
 
-    private var languagePreference = "auto"
-    private var rate = 1.0f
-    private var gender = VoiceGender.MALE
-    private var engineChoice = TtsEngineChoice.AUTO
-    @Volatile private var player: PcmPlayer? = null
+    @Volatile
+    private var languageTag: String = "uz-UZ"
+
+    @Volatile
+    private var rate: Float = 1.0f
+
+    @Volatile
+    private var gender: VoiceGender = VoiceGender.MALE
+
+    @Volatile
+    private var engineChoice: TtsEngineChoice = TtsEngineChoice.OPENAI_NEURAL
+
+    private val audioManager: AudioManager? =
+        context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+    init {
+        runCatching {
+            tts = AndroidTts(context.applicationContext, this)
+        }.onFailure {
+            if (!ready.isCompleted) ready.complete(false)
+        }
+    }
 
     override fun onInit(status: Int) {
-        if (status != AndroidTts.SUCCESS) {
-            Log.e(TAG, "TTS init failed: $status")
-            ready.complete(false)
-            return
+        val ok = status == AndroidTts.SUCCESS
+        if (ok) {
+            applyVoice()
         }
-        tts.setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build()
-        )
-        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) { _speaking.value = true }
-            override fun onDone(utteranceId: String?) = finish(utteranceId, true)
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) = finish(utteranceId, false)
-            override fun onError(utteranceId: String?, errorCode: Int) = finish(utteranceId, false)
-            override fun onStop(utteranceId: String?, interrupted: Boolean) = finish(utteranceId, false)
-        })
-        applyVoice()
-        ready.complete(true)
+        if (!ready.isCompleted) {
+            ready.complete(ok)
+        }
     }
 
-    private fun finish(id: String?, ok: Boolean) {
-        id?.let { pending.remove(it)?.complete(ok) }
-        if (pending.isEmpty()) _speaking.value = false
-    }
-
-    fun configure(language: String, speechRate: Float, voiceGender: VoiceGender = gender, engine: TtsEngineChoice = engineChoice) {
-        languagePreference = language
-        rate = speechRate
+    fun configure(
+        language: String,
+        speechRate: Float,
+        voiceGender: VoiceGender = gender,
+        engine: TtsEngineChoice = engineChoice
+    ) {
+        languageTag = language.ifBlank { "uz-UZ" }
+        rate = speechRate.coerceIn(0.65f, 1.6f)
         gender = voiceGender
         engineChoice = engine
-        if (ready.isCompleted) applyVoice()
+        if (ready.isCompleted) {
+            applyVoice()
+        }
     }
 
-    /** Fine-tunes the OpenAI neural voice: model and speaking speed (0.5–2.0). */
     fun openaiSettings(model: String, speed: Float) {
-        openaiTtsModel = model.ifBlank { OpenAiVoice.TTS_MODEL }
-        openaiTtsSpeed = speed.coerceIn(0.5f, 2.0f)
-        neuralVoices.filterIsInstance<OpenAiVoice>().forEach { it.model = openaiTtsModel; it.speed = openaiTtsSpeed }
+        neuralVoices.filterIsInstance<OpenAiVoice>().forEach { v ->
+            if (model.isNotBlank()) v.model = model
+            v.speed = speed.coerceIn(0.75f, 1.35f)
+        }
     }
 
-    private fun applyVoice() {
-        val candidates = if (languagePreference != "auto") listOf(Locale.forLanguageTag(languagePreference)) + FALLBACKS else FALLBACKS
-        for (locale in candidates + Locale.getDefault()) {
-            if (tts.isLanguageAvailable(locale) >= AndroidTts.LANG_AVAILABLE) {
-                tts.setLanguage(locale)
-                activeLocale = locale
-                break
-            }
-        }
-        val locale = activeLocale
-        val voices = runCatching { tts.voices?.toList().orEmpty() }.getOrDefault(emptyList())
-        val best = locale?.let { l ->
-            voices.filter { it.locale.language == l.language && !it.features.orEmpty().contains(AndroidTts.Engine.KEY_FEATURE_NOT_INSTALLED) }
-                .maxByOrNull { voiceScore(it.name, it.features.orEmpty(), it.quality, it.isNetworkConnectionRequired, gender) }
-        }
-        best?.let { runCatching { tts.voice = it; activeVoiceName = it.name } }
-        val labelled = best?.let { genderOf(it.name, it.features.orEmpty()) } != null
-        // When the engine doesn't tell us a voice's gender, shape it with pitch instead.
-        tts.setPitch(if (labelled) 1.0f else if (gender == VoiceGender.MALE) 0.86f else 1.14f)
-        tts.setSpeechRate(rate * 0.97f)
-    }
-
-    /** Speaks [text] and suspends until playback finishes (or fails/stops). */
     suspend fun speak(text: String): Boolean {
-        if (text.isBlank()) return true
-        pickNeural()?.let { voice ->
-            _speaking.value = true
-            val pcm = runCatching { withTimeoutOrNull(NEURAL_TIMEOUT_MS) { voice.synthesize(text, gender) } }.getOrNull()
-            if (pcm != null && pcm.size > 1000) {
-                lastEngine = voice.id
-                val p = PcmPlayer(NEURAL_SAMPLE_RATE)
-                player = p
-                val ok = try { p.play(pcm) } finally { player = null; _speaking.value = false }
-                return ok
-            }
-            _speaking.value = false
-            Log.w(TAG, "Neural voice ${voice.id} unavailable, using device voice")
-        }
-        lastEngine = "device"
-        return speakWithDevice(text)
-    }
+        val prepared = prepareUzbekSpeechText(text)
+        if (prepared.isBlank()) return false
+        stopped.set(false)
 
-    private fun pickNeural(): NeuralVoice? = when (engineChoice) {
-        TtsEngineChoice.DEVICE -> null
-        TtsEngineChoice.GEMINI -> neuralVoices.firstOrNull { it.id == "gemini" && it.isAvailable() }
-        TtsEngineChoice.OPENAI -> neuralVoices.firstOrNull { it.id == "openai" && it.isAvailable() }
-        TtsEngineChoice.AUTO -> neuralVoices.firstOrNull { it.isAvailable() }
-    }
-
-    private suspend fun speakWithDevice(text: String): Boolean {
-        val ok = withTimeoutOrNull(5_000) { ready.await() } ?: false
-        if (!ok) return false
-        val sentences = splitSentences(text)
-        var last: CompletableDeferred<Boolean>? = null
-        sentences.forEachIndexed { i, sentence ->
-            val id = UUID.randomUUID().toString()
-            val done = CompletableDeferred<Boolean>()
-            pending[id] = done
-            _speaking.value = true
-            val mode = if (i == 0) AndroidTts.QUEUE_FLUSH else AndroidTts.QUEUE_ADD
-            if (i > 0) tts.playSilentUtterance(SENTENCE_PAUSE_MS, AndroidTts.QUEUE_ADD, null)
-            if (tts.speak(sentence, mode, Bundle(), id) != AndroidTts.SUCCESS) {
-                finish(id, false)
-                return false
+        return withAudioFocus {
+            val neural = pickNeural()
+            if (neural != null) {
+                val pcm = withTimeoutOrNull(NEURAL_TIMEOUT_MS) {
+                    neural.synthesize(prepared, gender)
+                }
+                if (pcm != null && pcm.size > 1000 && !stopped.get()) {
+                    val enhancedPcm = enhanceAndNormalizePcm24k(pcm)
+                    val played = playPcm24kMono(enhancedPcm)
+                    if (played) return@withAudioFocus true
+                }
             }
-            last = done
+            speakWithDevice(prepared)
         }
-        // Generous upper bound: ~90 ms per character plus slack.
-        return withTimeoutOrNull(10_000L + text.length * 90L) { last?.await() ?: true } ?: run { stop(); false }
     }
 
     fun stop() {
-        player?.stop()
-        tts.stop()
-        pending.keys.toList().forEach { finish(it, false) }
+        stopped.set(true)
+        runCatching {
+            activeTrack?.pause()
+            activeTrack?.flush()
+            activeTrack?.stop()
+        }
+        runCatching { tts?.stop() }
     }
 
     fun shutdown() {
         stop()
-        tts.shutdown()
+        runCatching { tts?.shutdown() }
+    }
+
+    private fun pickNeural(): NeuralVoice? {
+        if (engineChoice == TtsEngineChoice.ANDROID_DEFAULT) return null
+        return neuralVoices.firstOrNull { it.isAvailable() }
+    }
+
+    private fun applyVoice() {
+        val engine = tts ?: return
+        val candidateLocales = listOf(
+            Locale.forLanguageTag(languageTag),
+            Locale.forLanguageTag("uz-UZ"),
+            Locale.forLanguageTag("uz"),
+            Locale.forLanguageTag("tr-TR"),
+            Locale.getDefault()
+        )
+
+        for (loc in candidateLocales) {
+            val res = runCatching { engine.setLanguage(loc) }.getOrDefault(AndroidTts.LANG_NOT_SUPPORTED)
+            if (res != AndroidTts.LANG_MISSING_DATA && res != AndroidTts.LANG_NOT_SUPPORTED) {
+                selectBestMatchingVoice(engine, loc)
+                break
+            }
+        }
+
+        val naturalPitch = when (gender) {
+            VoiceGender.MALE -> 0.94f
+            VoiceGender.FEMALE -> 1.05f
+        }
+        runCatching {
+            engine.setPitch(naturalPitch)
+            engine.setSpeechRate(rate.coerceIn(0.85f, 1.25f))
+            engine.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+        }
+    }
+
+    private fun selectBestMatchingVoice(engine: AndroidTts, targetLocale: Locale) {
+        val voices = runCatching { engine.voices }.getOrNull().orEmpty()
+        if (voices.isEmpty()) return
+        val lang = targetLocale.language.lowercase(Locale.ROOT)
+        val wantsMale = gender == VoiceGender.MALE
+
+        val best: Voice? = voices
+            .filter { it.locale.language.lowercase(Locale.ROOT) == lang }
+            .maxByOrNull { v ->
+                var score = v.quality
+                if (!v.isNetworkConnectionRequired) score += 150
+                val n = v.name.lowercase(Locale.ROOT)
+                if (wantsMale && (n.contains("male") || n.contains("man") || n.contains("#male"))) score += 300
+                if (!wantsMale && (n.contains("female") || n.contains("woman") || n.contains("#female"))) score += 300
+                score
+            }
+        if (best != null) {
+            runCatching { engine.voice = best }
+        }
+    }
+
+    private suspend fun speakWithDevice(text: String): Boolean {
+        val isReady = withTimeoutOrNull(3_000L) { ready.await() } ?: false
+        val engine = tts ?: return false
+        if (!isReady) return false
+
+        val sentences = splitIntoNaturalSentences(text)
+        if (sentences.isEmpty()) return false
+
+        for ((index, sentence) in sentences.withIndex()) {
+            if (stopped.get()) return false
+            val done = CompletableDeferred<Boolean>()
+            val utteranceId = "jarvis_${UUID.randomUUID()}"
+
+            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(id: String?) {}
+                override fun onDone(id: String?) {
+                    if (id == utteranceId && !done.isCompleted) done.complete(true)
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun onError(id: String?) {
+                    if (id == utteranceId && !done.isCompleted) done.complete(false)
+                }
+
+                override fun onStop(id: String?, interrupted: Boolean) {
+                    if (id == utteranceId && !done.isCompleted) done.complete(false)
+                }
+            })
+
+            val params = Bundle().apply {
+                putFloat(AndroidTts.Engine.KEY_PARAM_VOLUME, 1.0f)
+            }
+            val queueMode = if (index == 0) AndroidTts.QUEUE_FLUSH else AndroidTts.QUEUE_ADD
+            val code = engine.speak(sentence, queueMode, params, utteranceId)
+            if (code != AndroidTts.SUCCESS) return false
+
+            withTimeoutOrNull(15_000L) { done.await() }
+        }
+        return true
+    }
+
+    private suspend fun playPcm24kMono(pcmBytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        val sampleRate = 24_000
+        val minBuf = AudioTrack.getMinBufferSize(
+            sampleRate,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        ).coerceAtLeast(8192)
+
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setBufferSizeInBytes(minBuf)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .build()
+
+        activeTrack = track
+        try {
+            track.play()
+            var offset = 0
+            val chunk = 4096
+            while (offset < pcmBytes.size && !stopped.get()) {
+                val toWrite = (pcmBytes.size - offset).coerceAtMost(chunk)
+                val written = track.write(pcmBytes, offset, toWrite)
+                if (written <= 0) break
+                offset += written
+            }
+            !stopped.get()
+        } catch (e: Throwable) {
+            false
+        } finally {
+            activeTrack = null
+            runCatching {
+                track.stop()
+                track.release()
+            }
+        }
+    }
+
+    /**
+     * PCM 16-bit audio signalini tiniqlashtirish, ovoz balandligini normallashtirish
+     * hamda boshlanish/tugashda qirsillash (click/pop) bo'lmasligi uchun yumshoq fade qo'llash.
+     */
+    private fun enhanceAndNormalizePcm24k(rawPcm: ByteArray): ByteArray {
+        val count = rawPcm.size / 2
+        if (count < 64) return rawPcm
+        val inBuf = ByteBuffer.wrap(rawPcm).order(ByteOrder.LITTLE_ENDIAN)
+        val samples = ShortArray(count) { inBuf.short }
+
+        var peak = 1
+        for (s in samples) {
+            val a = abs(s.toInt())
+            if (a > peak) peak = a
+        }
+
+        val targetPeak = 28500.0
+        val gain = if (peak in 500..27000) (targetPeak / peak).coerceIn(1.0, 2.4) else 1.0
+        val fadeSamples = 240.coerceAtMost(count / 4)
+
+        val outBuf = ByteBuffer.allocate(count * 2).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until count) {
+            var env = 1.0
+            if (i < fadeSamples) {
+                env = i.toDouble() / fadeSamples
+            } else if (i > count - fadeSamples) {
+                env = (count - i).toDouble() / fadeSamples
+            }
+            val boosted = (samples[i] * gain * env).toInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                .toShort()
+            outBuf.putShort(boosted)
+        }
+        return outBuf.array()
+    }
+
+    /**
+     * O'zbek tilida raqamlar, soatlar va qisqartmalarni ravon o'qilishi uchun
+     * og'zaki matnga aylantiradi.
+     */
+    private fun prepareUzbekSpeechText(raw: String): String {
+        var text = raw
+            .replace(Regex("[*_#`~]+"), "")
+            .replace("o'", "o\u2018")
+            .replace("g'", "g\u2018")
+            .replace("O'", "O\u2018")
+            .replace("G'", "G\u2018")
+
+        text = text.replace(Regex("\\b0(\\d):00\\b"), "$1:00")
+        text = text.replace(Regex("\\b(\\d{1,2}):00\\b"), "soat $1")
+        text = text.replace(Regex("\\b0(\\d):(\\d{2})\\b"), "$1:$2")
+        text = text.replace(Regex("%"), " foiz")
+
+        return text.replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun splitIntoNaturalSentences(text: String): List<String> {
+        return text
+            .split(Regex("(?<=[.!?])\\s+"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+    }
+
+    private suspend fun <T> withAudioFocus(block: suspend () -> T): T {
+        val am = audioManager ?: return block()
+        var focusReq: AudioFocusRequest? = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusReq = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .build()
+            runCatching { am.requestAudioFocus(focusReq) }
+        }
+        return try {
+            block()
+        } finally {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusReq != null) {
+                runCatching { am.abandonAudioFocusRequest(focusReq) }
+            }
+        }
     }
 
     companion object {
-        private const val TAG = "JarvisTTS"
-        private const val SENTENCE_PAUSE_MS = 180L
         private const val NEURAL_TIMEOUT_MS = 9_000L
-        const val NEURAL_SAMPLE_RATE = 24_000
-        val FALLBACKS = listOf(Locale.forLanguageTag("uz-UZ"), Locale.forLanguageTag("uz"), Locale.forLanguageTag("tr-TR"), Locale.forLanguageTag("ru-RU"))
-
-        /** Splits text into sentences so the device voice can breathe between them. */
-        fun splitSentences(text: String): List<String> =
-            text.trim().split(Regex("""(?<=[.!?…])\s+""")).map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(text.trim()) }
-
-        /** "male"/"female" from a voice's name or features, or null if the engine doesn't say. */
-        fun genderOf(name: String, features: Set<String>): VoiceGender? {
-            val hay = (features.joinToString(" ") + " " + name).lowercase(Locale.ROOT)
-            return when {
-                Regex("""\bfemale\b|gender=female|#female|_female|-female""").containsMatchIn(hay) -> VoiceGender.FEMALE
-                Regex("""\bmale\b|gender=male|#male|_male|-male""").containsMatchIn(hay) -> VoiceGender.MALE
-                else -> null
-            }
-        }
-
-        /** Ranks candidate device voices: gender match, then quality, then offline availability. */
-        fun voiceScore(name: String, features: Set<String>, quality: Int, needsNetwork: Boolean, wanted: VoiceGender): Int {
-            val g = genderOf(name, features)
-            val genderScore = when (g) { wanted -> 1000; null -> 500; else -> 0 }
-            return genderScore + quality + (if (needsNetwork) 0 else 50)
-        }
-    }
-}
-
-/** Plays 16-bit mono PCM and suspends until it has been heard (or [stop] is called). */
-class PcmPlayer(private val sampleRate: Int) {
-    @Volatile private var track: AudioTrack? = null
-    @Volatile private var stopped = false
-
-    suspend fun play(pcm: ByteArray): Boolean = withContext(Dispatchers.IO) {
-        val minBuf = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val t = AudioTrack.Builder()
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .setBufferSizeInBytes(maxOf(minBuf, sampleRate / 2))
-            .build()
-        track = t
-        try {
-            t.play()
-            var offset = 0
-            while (offset < pcm.size && !stopped && isActive) {
-                val n = t.write(pcm, offset, minOf(8192, pcm.size - offset))
-                if (n <= 0) break
-                offset += n
-            }
-            val totalFrames = pcm.size / 2
-            val deadline = System.currentTimeMillis() + totalFrames * 1000L / sampleRate + 1500
-            while (!stopped && isActive && t.playbackHeadPosition < totalFrames && System.currentTimeMillis() < deadline) delay(40)
-            !stopped
-        } finally {
-            runCatching { t.stop() }
-            t.release()
-            track = null
-        }
-    }
-
-    fun stop() {
-        stopped = true
-        runCatching { track?.pause(); track?.flush() }
     }
 }

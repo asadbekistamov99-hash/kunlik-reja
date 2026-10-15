@@ -2,18 +2,22 @@ package com.jarvis.voice
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.util.Log
+import com.jarvis.core.SpellCorrector
 import com.jarvis.settings.SttEngineChoice
-import com.jarvis.wakeword.AudioListener
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -22,122 +26,163 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 class SttException(message: String, val recoverable: Boolean = true) : Exception(message)
 
-/** Callbacks for live UI feedback while listening. */
 interface SttEvents {
     fun onReady() {}
     fun onPartial(text: String) {}
-    /** Normalized input level 0..1 for the waveform. */
     fun onLevel(level: Float) {}
-    /** All candidate transcripts, most likely first (when the engine provides them). */
     fun onAlternatives(alternatives: List<String>) {}
 }
 
 interface SpeechToText {
     val id: String
     fun isAvailable(): Boolean
-    /** Listens for one utterance; returns the transcript, or null if nothing was said. */
     suspend fun listen(events: SttEvents, maxMillis: Long = 10_000): String?
 }
 
-/** Google speech recognition through Android's SpeechRecognizer (on-device when offline). */
-class AndroidSpeechToText(private val context: Context, private val online: () -> Boolean) : SpeechToText {
-    override val id = "google"
-    private val main = Handler(Looper.getMainLooper())
+/**
+ * Kuchaytirilgan Google SpeechRecognizer:
+ * - O'zbek tili (uz-UZ) + ko'p variantli (top-5) gipoteza tanlash
+ * - Gap o'rtasidagi qisqa pauzada uzib qo'ymaslik (1800ms silence threshold)
+ * - Imlo va fonetik normallashtirish
+ */
+class AndroidSpeechToText(
+    private val context: Context,
+    private val online: () -> Boolean
+) : SpeechToText {
+    override val id: String = "google"
 
-    override fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
+    override fun isAvailable(): Boolean =
+        SpeechRecognizer.isRecognitionAvailable(context)
 
-    override suspend fun listen(events: SttEvents, maxMillis: Long): String? = withContext(Dispatchers.Main) {
-        withTimeoutOrNull(maxMillis + 4_000) {
-            suspendCancellableCoroutine { cont ->
-                val offline = !online()
-                val recognizer = if (offline && android.os.Build.VERSION.SDK_INT >= 33 &&
-                    SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
-                ) SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-                else SpeechRecognizer.createSpeechRecognizer(context)
+    override suspend fun listen(events: SttEvents, maxMillis: Long): String? {
+        val firstTry = listenOnce(events, maxMillis, "uz-UZ")
+        if (!firstTry.isNullOrBlank()) return SpellCorrector.correct(firstTry)
+        return null
+    }
 
-                fun done(block: () -> Unit) {
-                    main.post { runCatching { recognizer.destroy() } }
-                    if (cont.isActive) block()
-                }
+    private suspend fun listenOnce(events: SttEvents, maxMillis: Long, localeTag: String): String? {
+        val resultDeferred = CompletableDeferred<String?>()
+        val mainHandler = Handler(Looper.getMainLooper())
+        var recognizer: SpeechRecognizer? = null
 
-                recognizer.setRecognitionListener(object : RecognitionListener {
-                    override fun onReadyForSpeech(params: Bundle?) = events.onReady()
+        mainHandler.post {
+            try {
+                val sr = SpeechRecognizer.createSpeechRecognizer(context)
+                recognizer = sr
+                sr.setRecognitionListener(object : RecognitionListener {
+                    private var latestPartial: String = ""
+
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        events.onReady()
+                    }
+
                     override fun onBeginningOfSpeech() {}
-                    override fun onRmsChanged(rmsdB: Float) = events.onLevel(((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
+
+                    override fun onRmsChanged(rmsdB: Float) {
+                        val norm = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+                        events.onLevel(norm)
+                    }
+
                     override fun onBufferReceived(buffer: ByteArray?) {}
-                    override fun onEndOfSpeech() = events.onLevel(0f)
-                    override fun onEvent(eventType: Int, params: Bundle?) {}
-                    override fun onPartialResults(partialResults: Bundle?) {
-                        partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                            ?.takeIf { it.isNotBlank() }?.let(events::onPartial)
-                    }
-                    override fun onResults(results: Bundle?) {
-                        val all = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty().filter { it.isNotBlank() }
-                        if (all.size > 1) events.onAlternatives(all)
-                        done { cont.resume(all.firstOrNull()) }
-                    }
+
+                    override fun onEndOfSpeech() {}
+
                     override fun onError(error: Int) {
-                        when (error) {
-                            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> done { cont.resume(null) }
-                            // Recoverable: the router falls back to the in-process Vosk recognizer, which
-                            // also covers recognition services that refuse background callers.
-                            else -> done { cont.resumeWithException(SttException(describe(error), recoverable = true)) }
+                        if (!resultDeferred.isCompleted) {
+                            resultDeferred.complete(latestPartial.takeIf { it.isNotBlank() })
                         }
                     }
+
+                    override fun onResults(results: Bundle?) {
+                        val matches = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.filter { it.isNotBlank() }
+                            .orEmpty()
+                        if (matches.isNotEmpty()) {
+                            events.onAlternatives(matches)
+                            val best = pickBestUzbekCandidate(matches)
+                            resultDeferred.complete(best)
+                        } else {
+                            resultDeferred.complete(latestPartial.takeIf { it.isNotBlank() })
+                        }
+                    }
+
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val part = partialResults
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            .orEmpty()
+                        if (part.isNotBlank()) {
+                            latestPartial = part
+                            events.onPartial(part)
+                        }
+                    }
+
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
                 })
+
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "uz-UZ")
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "uz-UZ")
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, localeTag)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, localeTag)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-                    // Don't cut the user off during natural pauses in longer commands.
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 800L)
-                    if (android.os.Build.VERSION.SDK_INT >= 33) {
-                        putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, BIASING_PHRASES)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1400L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1200L)
+                    if (!online()) {
+                        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
                     }
-                    putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-                    if (offline) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
                 }
-                recognizer.startListening(intent)
-                cont.invokeOnCancellation {
-                    main.post { runCatching { recognizer.cancel(); recognizer.destroy() } }
+                sr.startListening(intent)
+            } catch (e: Throwable) {
+                if (!resultDeferred.isCompleted) resultDeferred.complete(null)
+            }
+        }
+
+        return try {
+            withTimeoutOrNull(maxMillis + 1500L) {
+                resultDeferred.await()
+            }
+        } finally {
+            mainHandler.post {
+                runCatching {
+                    recognizer?.stopListening()
+                    recognizer?.cancel()
+                    recognizer?.destroy()
                 }
             }
         }
     }
 
-    private companion object {
-        /** Command words the recognizer should favour (used by on-device recognizers, API 33+). */
-        val BIASING_PHRASES = arrayListOf(
-            "Jarvis", "qo'sh", "rejani tuz", "tugallanmagan", "ko'rsat", "eslat", "o'chir", "ko'chir", "bog'lan",
-            "qo'ng'iroq", "kamera och", "fayl top", "bildirishnoma", "taqvim", "xat yubor", "eslab qol", "boshla", "tugat"
+    private fun pickBestUzbekCandidate(candidates: List<String>): String {
+        val commandKeywords = listOf(
+            "jarvis", "vazifa", "eslatma", "soat", "ertaga", "bugun",
+            "qo'sh", "bajarildi", "o'chir", "taqvim", "qo'ng'iroq", "odat"
         )
-    }
-
-    private fun describe(error: Int) = when (error) {
-        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Tarmoq xatosi"
-        SpeechRecognizer.ERROR_AUDIO -> "Mikrofon xatosi"
-        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Mikrofon uchun ruxsat yo'q"
-        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Ovoz tanish xizmati band"
-        SpeechRecognizer.ERROR_SERVER -> "Server xatosi"
-        12, 13 -> "Bu til qurilmada qo'llab-quvvatlanmaydi"
-        else -> "Ovoz tanish xatosi ($error)"
+        return candidates.maxByOrNull { candidate ->
+            val corrected = SpellCorrector.correct(candidate).lowercase()
+            val keywordHits = commandKeywords.count { corrected.contains(it) }
+            keywordHits * 10 + corrected.length.coerceAtMost(40)
+        } ?: candidates.first()
     }
 }
 
 /**
- * OpenAI Whisper transcription. Audio is captured locally with a simple energy VAD (stops after
- * ~1 s of silence) and uploaded as WAV only when the user enabled this engine with their own key.
+ * Kuchaytirilgan OpenAI Whisper STT:
+ * - Aparat darajasidagi NoiseSuppressor, AutomaticGainControl va AcousticEchoCanceler
+ * - Avtomatik Voice Activity Detection (VAD): foydalanuvchi gapini tugatishi bilan (1.1s sukunat)
+ *   darhol yozishni yakunlab serverga yuboradi
+ * - Ovoz past bo'lsa avtomatik dinamik kuchaytirish (Gain Normalization)
+ * - O'zbekcha maxsus prompt konteksti bilan yuqori aniqlik
  */
 class WhisperSpeechToText(
     private val context: Context,
@@ -146,105 +191,213 @@ class WhisperSpeechToText(
     private val online: () -> Boolean,
     private val endpoint: String = "https://api.openai.com/v1/audio/transcriptions"
 ) : SpeechToText {
-    override val id = "whisper"
+    override val id: String = "whisper"
 
-    override fun isAvailable(): Boolean = !apiKey().isNullOrBlank() && online()
+    override fun isAvailable(): Boolean {
+        val key = apiKey()?.trim()
+        return !key.isNullOrEmpty() && online()
+    }
 
-    override suspend fun listen(events: SttEvents, maxMillis: Long): String? {
-        val pcm = record(events, maxMillis) ?: return null
-        val key = apiKey() ?: throw SttException("OpenAI kaliti kiritilmagan", recoverable = false)
-        return withContext(Dispatchers.IO) {
-            val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-                .addFormDataPart("model", "whisper-1")
-                .addFormDataPart("language", "uz")
-                .addFormDataPart("response_format", "json")
-                .addFormDataPart("file", "speech.wav", wav(pcm, AudioListener.SAMPLE_RATE).toRequestBody("audio/wav".toMediaType()))
-                .build()
-            val request = Request.Builder().url(endpoint).header("Authorization", "Bearer $key").post(body).build()
-            http.newCall(request).execute().use { resp ->
-                val text = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) throw SttException("Whisper xatosi: HTTP ${resp.code}")
-                JSONObject(text).optString("text").trim().ifBlank { null }
+    override suspend fun listen(events: SttEvents, maxMillis: Long): String? = withContext(Dispatchers.IO) {
+        if (!isAvailable()) return@withContext null
+        val pcmSamples = recordWithVadAndFilter(events, maxMillis) ?: return@withContext null
+        if (pcmSamples.size < SAMPLE_RATE / 3) return@withContext null
+
+        val normalizedPcm = normalizeGain(pcmSamples)
+        val wavBytes = encodeWav16BitMono(normalizedPcm, SAMPLE_RATE)
+
+        val key = apiKey()?.trim() ?: return@withContext null
+        val multipart = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                "speech.wav",
+                wavBytes.toRequestBody("audio/wav".toMediaType())
+            )
+            .addFormDataPart("model", "whisper-1")
+            .addFormDataPart("language", "uz")
+            .addFormDataPart(
+                "prompt",
+                "Jarvis, vazifa qo'sh, eslatma o'rnat, ertaga soat, bajarildi, o'chir, bugungi reja, taqvim, qo'ng'iroq qil, o'zbek tilida aniq buyruqlar."
+            )
+            .build()
+
+        val req = Request.Builder()
+            .url(endpoint)
+            .header("Authorization", "Bearer $key")
+            .post(multipart)
+            .build()
+
+        runCatching {
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext null
+                val body = resp.body?.string() ?: return@withContext null
+                val rawText = JSONObject(body).optString("text", "").trim()
+                if (rawText.isBlank()) null else SpellCorrector.correct(rawText)
             }
+        }.getOrNull()
+    }
+
+    private fun recordWithVadAndFilter(events: SttEvents, maxMillis: Long): ShortArray? {
+        val minBuf = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        ).coerceAtLeast(4096)
+
+        val record = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minBuf * 2
+            )
+        } catch (e: SecurityException) {
+            return null
+        }
+
+        if (record.state != AudioRecord.STATE_INITIALIZED) {
+            record.release()
+            return null
+        }
+
+        val sessionId = record.audioSessionId
+        val ns = runCatching { if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(sessionId)?.apply { enabled = true } else null }.getOrNull()
+        val agc = runCatching { if (AutomaticGainControl.isAvailable()) AutomaticGainControl.create(sessionId)?.apply { enabled = true } else null }.getOrNull()
+        val aec = runCatching { if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(sessionId)?.apply { enabled = true } else null }.getOrNull()
+
+        val collected = ArrayList<Short>(SAMPLE_RATE * 6)
+        val frame = ShortArray(1024)
+        var speechDetected = false
+        var silenceAfterSpeechMs = 0L
+        val startTime = System.currentTimeMillis()
+
+        return try {
+            record.startRecording()
+            events.onReady()
+
+            while (System.currentTimeMillis() - startTime < maxMillis) {
+                val read = record.read(frame, 0, frame.size)
+                if (read <= 0) continue
+
+                var sumSq = 0.0
+                for (i in 0 until read) {
+                    val s = frame[i]
+                    collected.add(s)
+                    sumSq += (s.toDouble() * s.toDouble())
+                }
+                val rms = sqrt(sumSq / read)
+                val level = (rms / 6500.0).toFloat().coerceIn(0f, 1f)
+                events.onLevel(level)
+
+                val frameMs = (read * 1000L) / SAMPLE_RATE
+                if (rms > SPEECH_RMS_THRESHOLD) {
+                    speechDetected = true
+                    silenceAfterSpeechMs = 0L
+                } else if (speechDetected) {
+                    silenceAfterSpeechMs += frameMs
+                    if (silenceAfterSpeechMs >= END_OF_SPEECH_SILENCE_MS) {
+                        break
+                    }
+                }
+            }
+            if (!speechDetected) null else collected.toShortArray()
+        } finally {
+            runCatching { ns?.release() }
+            runCatching { agc?.release() }
+            runCatching { aec?.release() }
+            runCatching { record.stop() }
+            runCatching { record.release() }
         }
     }
 
-    private suspend fun record(events: SttEvents, maxMillis: Long): ShortArray? = suspendCancellableCoroutine { cont ->
-        val listener = AudioListener(context, frameSize = 480) // 30 ms frames
-        val out = ArrayList<Short>(AudioListener.SAMPLE_RATE * 10)
-        val maxFrames = (maxMillis / 30).toInt()
-        var frames = 0
-        var speechFrames = 0
-        var silenceAfterSpeech = 0
-        var noiseFloor = 0.01f
-        events.onReady()
-        listener.start(
-            onFrame = { frame ->
-                frames++
-                val level = AudioListener.rms(frame)
-                events.onLevel((level * 12f).coerceIn(0f, 1f))
-                if (frames <= 10) noiseFloor = maxOf(noiseFloor, level * 1.5f)
-                val voiced = level > noiseFloor * 2.2f
-                if (voiced) { speechFrames++; silenceAfterSpeech = 0 } else if (speechFrames > 0) silenceAfterSpeech++
-                if (speechFrames > 0) frame.forEach { out.add(it) }
-                val finished = (speechFrames > 5 && silenceAfterSpeech > 33) || frames >= maxFrames ||
-                    (speechFrames == 0 && frames > 5000 / 30)
-                if (finished) {
-                    Thread { listener.stop() }.start()
-                    if (cont.isActive) cont.resume(if (speechFrames > 5) out.toShortArray() else null)
-                }
-            },
-            onError = { e -> if (cont.isActive) cont.resumeWithException(SttException(e.message ?: "Mikrofon xatosi")) }
-        )
-        cont.invokeOnCancellation { listener.stop() }
+    private fun normalizeGain(samples: ShortArray): ShortArray {
+        var peak = 1
+        for (s in samples) {
+            val a = abs(s.toInt())
+            if (a > peak) peak = a
+        }
+        if (peak >= 24000 || peak < 150) return samples
+        val gain = (24000.0 / peak).coerceIn(1.0, 6.0)
+        return ShortArray(samples.size) { idx ->
+            (samples[idx] * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        }
+    }
+
+    private fun encodeWav16BitMono(samples: ShortArray, sampleRate: Int): ByteArray {
+        val byteDataSize = samples.size * 2
+        val out = ByteArrayOutputStream(44 + byteDataSize)
+        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+        header.put("RIFF".toByteArray(Charsets.US_ASCII))
+        header.putInt(36 + byteDataSize)
+        header.put("WAVE".toByteArray(Charsets.US_ASCII))
+        header.put("fmt ".toByteArray(Charsets.US_ASCII))
+        header.putInt(16)
+        header.putShort(1)
+        header.putShort(1)
+        header.putInt(sampleRate)
+        header.putInt(sampleRate * 2)
+        header.putShort(2)
+        header.putShort(16)
+        header.put("data".toByteArray(Charsets.US_ASCII))
+        header.putInt(byteDataSize)
+        out.write(header.array())
+
+        val pcmBuf = ByteBuffer.allocate(byteDataSize).order(ByteOrder.LITTLE_ENDIAN)
+        for (s in samples) pcmBuf.putShort(s)
+        out.write(pcmBuf.array())
+        return out.toByteArray()
     }
 
     companion object {
-        fun wav(pcm: ShortArray, sampleRate: Int): ByteArray {
-            val dataLen = pcm.size * 2
-            val buf = ByteBuffer.allocate(44 + dataLen).order(ByteOrder.LITTLE_ENDIAN)
-            buf.put("RIFF".toByteArray()); buf.putInt(36 + dataLen); buf.put("WAVE".toByteArray())
-            buf.put("fmt ".toByteArray()); buf.putInt(16); buf.putShort(1); buf.putShort(1)
-            buf.putInt(sampleRate); buf.putInt(sampleRate * 2); buf.putShort(2); buf.putShort(16)
-            buf.put("data".toByteArray()); buf.putInt(dataLen)
-            pcm.forEach { buf.putShort(it) }
-            return buf.array()
-        }
+        private const val SAMPLE_RATE = 16_000
+        private const val SPEECH_RMS_THRESHOLD = 420.0
+        private const val END_OF_SPEECH_SILENCE_MS = 1_150L
     }
 }
 
-/** Picks the best engine for the moment and falls back when one fails (e.g. network drops). */
+/**
+ * Uzluksiz kaskadli STT marshrutizator:
+ * Agar tanlangan dvigatel xato bersa yoki bo'sh natija qaytarsa,
+ * avtomatik keyingi ishlaydigan dvigatelga o'tadi.
+ */
 class SpeechToTextRouter(
     private val google: SpeechToText,
     private val whisper: SpeechToText,
     private val vosk: VoskSpeechToText,
     private val choice: () -> SttEngineChoice,
     private val online: () -> Boolean
-) {
-    fun order(): List<SpeechToText> {
-        val isOnline = online()
-        val preferred = when (choice()) {
-            SttEngineChoice.GOOGLE -> listOf(google, vosk)
-            SttEngineChoice.WHISPER -> listOf(whisper, google, vosk)
-            SttEngineChoice.VOSK -> listOf(vosk, google)
-            SttEngineChoice.AUTO -> if (isOnline) listOf(google, whisper, vosk) else listOf(vosk, google)
-        }
-        return preferred.filter { it.isAvailable() }.ifEmpty { listOf(google) }
-    }
+) : SpeechToText {
 
-    suspend fun listen(events: SttEvents, maxMillis: Long = 10_000): Pair<String?, String> {
-        var lastError: SttException? = null
-        for (engine in order()) {
-            try {
-                return engine.listen(events, maxMillis) to engine.id
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: SttException) {
-                Log.w("SttRouter", "${engine.id} failed: ${e.message}")
-                lastError = e
-                if (!e.recoverable) break
+    override val id: String
+        get() = selectChain().firstOrNull()?.id ?: "none"
+
+    override fun isAvailable(): Boolean = selectChain().isNotEmpty()
+
+    override suspend fun listen(events: SttEvents, maxMillis: Long): String? {
+        val chain = selectChain()
+        for (engine in chain) {
+            val text = runCatching { engine.listen(events, maxMillis) }.getOrNull()
+            if (!text.isNullOrBlank()) {
+                return SpellCorrector.correct(text)
             }
         }
-        throw lastError ?: SttException("Ovoz tanish mavjud emas")
+        return null
+    }
+
+    private fun selectChain(): List<SpeechToText> {
+        val isOnline = online()
+        val ordered = when (choice()) {
+            SttEngineChoice.WHISPER -> listOf(whisper, google, vosk)
+            SttEngineChoice.GOOGLE -> listOf(google, whisper, vosk)
+            SttEngineChoice.VOSK -> listOf(vosk, google, whisper)
+            SttEngineChoice.AUTO -> if (isOnline) {
+                listOf(whisper, google, vosk)
+            } else {
+                listOf(vosk, google)
+            }
+        }
+        return ordered.filter { it.isAvailable() }
     }
 }
