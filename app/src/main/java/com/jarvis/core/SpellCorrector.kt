@@ -69,7 +69,9 @@ object SpellCorrector {
         "kalendarga" to "taqvimga",
         "pochtani" to "email",
         "pochta" to "email",
-        "xat" to "email"
+        "xat" to "email",
+        "eslar" to "eslat",
+        "yigilish" to "yig'ilish"
     )
 
     private val vocabulary = setOf(
@@ -79,7 +81,8 @@ object SpellCorrector {
         "ro'yxat", "qidir", "top", "eslab", "qol", "unut", "kamera", "rasm",
         "video", "fayl", "qo'ng'iroq", "bildirishnoma", "xabar", "email",
         "salom", "rahmat", "yordam", "to'xta", "uxla", "vaqt", "necha",
-        "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba", "yakshanba"
+        "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba", "yakshanba",
+        "rejani", "eslat", "tugallanmagan", "uchrashuv", "yig'ilish"
     )
 
     fun correct(text: String): String {

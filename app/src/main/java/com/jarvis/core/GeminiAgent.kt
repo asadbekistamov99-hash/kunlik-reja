@@ -57,9 +57,9 @@ class GeminiAgent(
             .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
             .build()
 
-        val url = if (endpoint.contains("?key=")) endpoint else "$endpoint?key=$key"
         val req = Request.Builder()
-            .url(url)
+            .url(endpoint)
+            .header("x-goog-api-key", key)
             .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
             .build()
 
