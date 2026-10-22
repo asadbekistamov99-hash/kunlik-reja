@@ -375,14 +375,21 @@ class SpeechToTextRouter(
 
     override fun isAvailable(): Boolean = selectChain().isNotEmpty()
 
+    /** Oxirgi matnni bergan mexanizm id'si ("google", "whisper", "vosk"); hech narsa bo'lmasa "none". */
+    @Volatile
+    var lastEngineId: String = "none"
+        private set
+
     override suspend fun listen(events: SttEvents, maxMillis: Long): String? {
         val chain = selectChain()
         for (engine in chain) {
             val text = runCatching { engine.listen(events, maxMillis) }.getOrNull()
             if (!text.isNullOrBlank()) {
+                lastEngineId = engine.id
                 return SpellCorrector.correct(text)
             }
         }
+        lastEngineId = "none"
         return null
     }
 
