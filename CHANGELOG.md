@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- **Uzbek speech pipeline:** Whisper STT ends a turn after 1.15 s of silence, Google STT keeps a 1.8 s pause tolerance and picks the most command-like of its 5 alternatives; the recorder uses hardware noise suppression, gain control and echo cancelling where the device has them.
+- **Uzbek TTS:** pronunciation preparation (times, percent, apostrophes), Gemini and OpenAI neural voices, PCM gain normalization, fades and audio focus that ducks background music.
+- **Spoken Uzbek parsing:** spoken hours ("soat to'qqiz yarimda"), day periods ("tushdan keyin" = 14:00), relative times and weekdays.
+- **Gemini JSON Schema:** replies are constrained by `responseSchema` (intent enum and typed slots) and parsed with `org.json`.
+
+### Fixed
+- Restored the intent resolver, command parser and Jarvis engine to the last stable core; the follow-up, confirmation and history flows are back.
+- Restored `GeminiVoice`, `lastEngine` and `activeVoiceName` in the TTS manager; TTS uses the shared `VoiceGender` and `TtsEngineChoice` from settings.
+- Gemini schema keys are mapped to the slot constants the executor reads (duration, contact, reply).
+- Task titles drop the accusative suffix ("borishni" becomes "borish").
+- Uzbek apostrophes and Cyrillic letters that were double-encoded are readable again.
+
 ## [1.2.1] - 2026-09-30
 
 ### Added
