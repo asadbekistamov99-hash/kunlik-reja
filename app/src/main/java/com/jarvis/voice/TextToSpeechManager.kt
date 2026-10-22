@@ -87,8 +87,13 @@ class OpenAiVoice(
 ) : NeuralVoice {
     override val id: String = "openai"
 
+    companion object {
+        const val TTS_MODEL = "gpt-4o-mini-tts"
+        fun voiceName(gender: VoiceGender) = if (gender == VoiceGender.MALE) "onyx" else "nova"
+    }
+
     @Volatile
-    var model: String = "gpt-4o-mini-tts"
+    var model: String = TTS_MODEL
 
     @Volatile
     var speed: Float = 1.0f
@@ -508,5 +513,29 @@ class TextToSpeechManager(
 
     companion object {
         private const val NEURAL_TIMEOUT_MS = 9_000L
+
+        /** Matnni gaplarga bo'ladi, shunda qurilma ovozi gaplar orasida nafas oladi. */
+        fun splitSentences(text: String): List<String> =
+            text.trim().split(Regex("""(?<=[.!?…])\s+""")).map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(text.trim()) }
+
+        /** Ovoz nomi yoki xususiyatlaridan "male"/"female" ni aniqlaydi; bilmasa null. */
+        fun genderOf(name: String, features: Set<String>): VoiceGender? {
+            val hay = (features.joinToString(" ") + " " + name).lowercase(Locale.ROOT)
+            return when {
+                Regex("""\bfemale\b|gender=female|#female|_female|-female""").containsMatchIn(hay) -> VoiceGender.FEMALE
+                Regex("""\bmale\b|gender=male|#male|_male|-male""").containsMatchIn(hay) -> VoiceGender.MALE
+                else -> null
+            }
+        }
+
+        /** Qurilma ovozlarini saralaydi: jins mosligi, sifat, so'ng oflayn mavjudligi. */
+        fun voiceScore(name: String, features: Set<String>, quality: Int, needsNetwork: Boolean, wanted: VoiceGender): Int {
+            val genderScore = when (genderOf(name, features)) {
+                wanted -> 1000
+                null -> 500
+                else -> 0
+            }
+            return genderScore + quality + (if (needsNetwork) 0 else 50)
+        }
     }
 }

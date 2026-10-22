@@ -354,6 +354,18 @@ class WhisperSpeechToText(
         private const val SAMPLE_RATE = 16_000
         private const val SPEECH_RMS_THRESHOLD = 420.0
         private const val END_OF_SPEECH_SILENCE_MS = 1_150L
+
+        /** 16-bit mono PCM ni WAV konteyneriga o'raydi (Whisper uchun). */
+        fun wav(pcm: ShortArray, sampleRate: Int): ByteArray {
+            val dataLen = pcm.size * 2
+            val buf = ByteBuffer.allocate(44 + dataLen).order(ByteOrder.LITTLE_ENDIAN)
+            buf.put("RIFF".toByteArray()); buf.putInt(36 + dataLen); buf.put("WAVE".toByteArray())
+            buf.put("fmt ".toByteArray()); buf.putInt(16); buf.putShort(1); buf.putShort(1)
+            buf.putInt(sampleRate); buf.putInt(sampleRate * 2); buf.putShort(2); buf.putShort(16)
+            buf.put("data".toByteArray()); buf.putInt(dataLen)
+            pcm.forEach { buf.putShort(it) }
+            return buf.array()
+        }
     }
 }
 
