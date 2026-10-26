@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. Format: [Keep a Changelog](https://keepachangelog.com), versioning: [SemVer](https://semver.org).
 
+## [1.3.1] - 2026-10-26
+
+### Changed
+- Bumped the Android application version to 1.3.1.
+- Confirmed-action execution and Android 12–15 CI coverage are included in this release line.
+
+### Verified
+- Debug and R8 release builds, unit/integration tests, lint, and Android 12–15 instrumented tests pass in CI.
+
 ## [1.2.1] - 2026-09-30
 
 ### Added
