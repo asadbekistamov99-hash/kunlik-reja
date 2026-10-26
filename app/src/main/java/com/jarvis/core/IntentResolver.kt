@@ -1,6 +1,6 @@
 package com.jarvis.core
 
-import java.util.Locale
+import java.time.format.DateTimeFormatter
 
 enum class IntentType {
     WAKE,
@@ -37,6 +37,7 @@ enum class IntentType {
     UNKNOWN
 }
 
+/** A resolved intent with its extracted slots (all values are strings for uniform handling). */
 data class ResolvedIntent(
     val type: IntentType,
     val confidence: Float,
@@ -44,208 +45,254 @@ data class ResolvedIntent(
     val source: String = "offline"
 ) {
     fun slot(name: String): String? = slots[name]?.takeIf { it.isNotBlank() }
+
+    companion object {
+        const val TITLE = "title"
+        const val DATE = "date"
+        const val TIME = "time"
+        const val DURATION = "duration"
+        const val QUERY = "query"
+        const val CONTACT = "contact"
+        const val EXTENSION = "extension"
+        const val VIDEO = "video"
+        const val TO = "to"
+        const val SUBJECT = "subject"
+        const val BODY = "body"
+        const val MEMORY_TYPE = "memory_type"
+        const val CONTENT = "content"
+        const val PRIORITY = "priority"
+        const val CATEGORY = "category"
+        const val ANSWER = "answer"
+        const val DEADLINE = "deadline"
+    }
 }
 
 /**
- * O'zbek tilidagi og'zaki va adabiy buyruqlarni yuqori aniqlik bilan
- * 32 ta tizim IntentType'ga ajratuvchi va slotlarni toza chiqarib beruvchi yechimchi.
+ * Offline, rule-based intent recognition for Uzbek commands. Rules are ordered from most to least
+ * specific; the first matching rule wins. Confidence below [JarvisEngine.CONFIDENT] lets the online
+ * agent (when available) take a second look.
  */
 class IntentResolver {
 
     fun resolve(cmd: ParsedCommand): ResolvedIntent {
-        val body = cmd.body.trim().lowercase(Locale.ROOT)
-        if (body.isBlank()) {
-            return if (cmd.hasWakeWord) {
-                ResolvedIntent(IntentType.WAKE, 0.99f)
-            } else {
-                ResolvedIntent(IntentType.UNKNOWN, 0.1f)
+        val t = cmd.body
+        val slots = LinkedHashMap<String, String>()
+        cmd.date?.let { slots[ResolvedIntent.DATE] = it.toString() }
+        cmd.time?.let { slots[ResolvedIntent.TIME] = it.format(HHMM) }
+        cmd.durationMinutes?.let { slots[ResolvedIntent.DURATION] = it.toString() }
+        cmd.deadline?.let { slots[ResolvedIntent.DEADLINE] = it.toString() }
+
+        fun hit(type: IntentType, confidence: Float = 0.9f, vararg extra: Pair<String, String>) =
+            ResolvedIntent(type, confidence, slots + extra.filter { it.second.isNotBlank() })
+
+        if (t.isBlank()) return hit(if (cmd.hasWakeWord) IntentType.WAKE else IntentType.UNKNOWN, if (cmd.hasWakeWord) 1f else 0f)
+        if (STOP_RE.matches(t)) return hit(IntentType.STOP_SESSION, 1f)
+        if (START_RE.matches(t)) return hit(IntentType.START_SESSION, 1f)
+
+        if (PATTERNS_RE.containsMatchIn(t)) return hit(IntentType.WORK_PATTERNS, 0.9f)
+        if (FORGET_RE.containsMatchIn(t)) {
+            return hit(IntentType.FORGET, 0.85f, ResolvedIntent.QUERY to strip(cmd.remainder, FORGET_RE, FILLER_RE))
+        }
+        if (RECALL_RE.containsMatchIn(t)) {
+            val about = if (Regex("""\bism""").containsMatchIn(t)) "ism" else strip(cmd.remainder, RECALL_RE, FILLER_RE, QUESTION_RE)
+            return hit(IntentType.RECALL, 0.9f, ResolvedIntent.QUERY to about)
+        }
+        if (REMEMBER_EXPLICIT_RE.containsMatchIn(t) || PERSONAL_FACT_RE.containsMatchIn(t)) {
+            val content = strip(cmd.body, REMEMBER_EXPLICIT_RE, Regex("""\b(?:ki|shuni)\b"""))
+            return hit(
+                IntentType.REMEMBER, 0.9f,
+                ResolvedIntent.CONTENT to content,
+                ResolvedIntent.MEMORY_TYPE to classifyMemory(content)
+            )
+        }
+
+        if (CAMERA_RE.containsMatchIn(t)) {
+            return hit(IntentType.OPEN_CAMERA, 0.95f, ResolvedIntent.VIDEO to VIDEO_RE.containsMatchIn(t).toString())
+        }
+        if (FILE_NOUN_RE.containsMatchIn(t) && FILE_VERB_RE.containsMatchIn(t)) {
+            val ext = EXTENSIONS.entries.firstOrNull { (k, _) -> Regex("""\b$k\w*""").containsMatchIn(t) }?.value.orEmpty()
+            val query = strip(cmd.remainder, FILE_VERB_RE, FILE_NOUN_RE, FILLER_RE, Regex("""\b(?:pdf|word|excel|docx?|xlsx?|pptx?|txt)\w*\b"""))
+            return hit(IntentType.FIND_FILE, 0.9f, ResolvedIntent.EXTENSION to ext, ResolvedIntent.QUERY to query)
+        }
+        if (CALL_RE.containsMatchIn(t)) {
+            val name = strip(cmd.remainder, CALL_RE, FILLER_RE, Regex("""\b(?:bilan|ni|raqamini|raqamiga)\b"""))
+            return hit(IntentType.CALL_CONTACT, 0.9f, ResolvedIntent.CONTACT to stripDative(name))
+        }
+        if (NOTIFICATION_RE.containsMatchIn(t)) {
+            return if (CLEAR_RE.containsMatchIn(t)) hit(IntentType.CLEAR_NOTIFICATIONS, 0.9f)
+            else hit(IntentType.READ_NOTIFICATIONS, 0.9f)
+        }
+        if (EMAIL_RE.containsMatchIn(t)) {
+            val to = EMAIL_ADDRESS_RE.find(cmd.normalized)?.value.orEmpty()
+            val body = BODY_RE.find(cmd.original)?.groupValues?.get(1)?.trim().orEmpty()
+            val subject = SUBJECT_RE.find(cmd.body)?.groupValues?.get(1)?.trim().orEmpty()
+            val recipientName = if (to.isBlank()) {
+                RECIPIENT_RE.find(cmd.body)?.groupValues?.get(1).orEmpty()
+            } else ""
+            return when {
+                SEND_RE.containsMatchIn(t) -> hit(
+                    IntentType.EMAIL_SEND, 0.9f, ResolvedIntent.TO to to.ifBlank { recipientName },
+                    ResolvedIntent.SUBJECT to subject, ResolvedIntent.BODY to body
+                )
+                DRAFT_RE.containsMatchIn(t) -> hit(
+                    IntentType.EMAIL_DRAFT, 0.9f, ResolvedIntent.TO to to.ifBlank { recipientName },
+                    ResolvedIntent.SUBJECT to subject, ResolvedIntent.BODY to body
+                )
+                else -> hit(IntentType.EMAIL_READ, 0.9f)
             }
         }
-
-        // 1. Suhbatni boshlash / to'xtatish
-        if (body.matches(Regex("^(muloqotni\\s+boshla|meni\\s+eshit|gaplashamiz|suhbatni\\s+boshla|tingla)$"))) {
-            return ResolvedIntent(IntentType.START_SESSION, 0.98f)
-        }
-        if (body.matches(Regex("^(to'xta|uxla|jim\\s+bo'l|yetarli|suhbatni\\s+tugat|xayr|bo'ldi\\s+rahmat)$"))) {
-            return ResolvedIntent(IntentType.STOP_SESSION, 0.98f)
-        }
-
-        // 2. Salomlashish / Rahmat / Yordam / Soat
-        if (body.matches(Regex("^(salom|assalomu\\s+alaykum|xayrli\\s+tong|xayrli\\s+kun|xayrli\\s+kech|qalaysan|ishlar\\s+qalay)$"))) {
-            return ResolvedIntent(IntentType.GREETING, 0.96f)
-        }
-        if (body.matches(Regex("^(rahmat|katta\\s+rahmat|tashakkur|barakalla|yaxshi|zo'r)$"))) {
-            return ResolvedIntent(IntentType.THANKS, 0.95f)
-        }
-        if (body.matches(Regex("^(yordam|nima\\s+qila\\s+olasan|imkoniyatlaring|buyruqlar|qanday\\s+ishlaysan).*$"))) {
-            return ResolvedIntent(IntentType.HELP, 0.95f)
-        }
-        if (body.contains("soat necha") || body.contains("vaqt necha") || body.contains("bugun qaysi kun") || body.contains("sana necha")) {
-            return ResolvedIntent(IntentType.TIME_QUERY, 0.97f)
+        if (CALENDAR_RE.containsMatchIn(t)) {
+            return if (DELETE_RE.containsMatchIn(t)) {
+                hit(IntentType.CALENDAR_DELETE, 0.85f, ResolvedIntent.TITLE to titleFrom(cmd.remainder, CALENDAR_RE, DELETE_RE))
+            } else if (ADD_RE.containsMatchIn(t)) {
+                hit(IntentType.ADD_TASK, 0.9f, ResolvedIntent.TITLE to titleFrom(cmd.remainder, CALENDAR_RE, ADD_RE))
+            } else hit(IntentType.CALENDAR_READ, 0.9f)
         }
 
-        // 3. Kamera
-        if (body.contains("kamerani och") || body.contains("rasmga ol") || body.contains("suratga ol") || body.contains("videoga ol")) {
-            val isVideo = body.contains("video")
-            return ResolvedIntent(IntentType.OPEN_CAMERA, 0.96f, mapOf("mode" to if (isVideo) "video" else "photo"))
+        if (REMINDER_RE.containsMatchIn(t)) {
+            return hit(IntentType.ADD_REMINDER, if (cmd.time != null) 0.95f else 0.8f,
+                ResolvedIntent.TITLE to titleFrom(cmd.remainder, REMINDER_RE))
         }
-
-        // 4. Qo'ng'iroq qilish
-        Regex("^(?:iltimos\\s+)?(.+?)(?:ga|ni\\s+raqamiga)\\s+(?:qo'ng'iroq\\s+qil|telefon\\s+qil|sim\\s+qoq|ter)\\b").find(body)?.let { m ->
-            val contactName = cleanEntityName(m.groupValues[1])
-            if (contactName.isNotBlank()) {
-                return ResolvedIntent(IntentType.CALL_CONTACT, 0.96f, mapOf("name" to contactName))
-            }
+        if (HABIT_RE.containsMatchIn(t) && ADD_RE.containsMatchIn(t)) {
+            return hit(IntentType.ADD_HABIT, 0.9f, ResolvedIntent.TITLE to titleFrom(cmd.remainder, HABIT_RE, ADD_RE))
         }
-        Regex("^(?:qo'ng'iroq\\s+qil|telefon\\s+qil)\\s+(.+)$").find(body)?.let { m ->
-            val contactName = cleanEntityName(m.groupValues[1])
-            if (contactName.isNotBlank()) {
-                return ResolvedIntent(IntentType.CALL_CONTACT, 0.95f, mapOf("name" to contactName))
-            }
+        if (PENDING_RE.containsMatchIn(t)) return hit(IntentType.LIST_PENDING, 0.95f)
+        if (PLAN_RE.containsMatchIn(t)) return hit(IntentType.PLAN_DAY, 0.95f)
+        // Completion/reschedule/delete run before reminders so that "…ni bajarildi qilib belgila"
+        // is understood as a status update, not a new reminder.
+        if (COMPLETE_RE.containsMatchIn(t)) {
+            return hit(IntentType.COMPLETE_TASK, 0.85f, ResolvedIntent.TITLE to titleFrom(cmd.remainder, COMPLETE_RE))
         }
-
-        // 5. Bildirishnomalar
-        if (body.contains("bildirishnomalarni o'chir") || body.contains("xabarlarni tozalab tashla")) {
-            return ResolvedIntent(IntentType.CLEAR_NOTIFICATIONS, 0.95f)
+        if (RESCHEDULE_RE.containsMatchIn(t) && (cmd.time != null || cmd.date != null)) {
+            return hit(IntentType.RESCHEDULE_TASK, 0.85f, ResolvedIntent.TITLE to titleFrom(cmd.remainder, RESCHEDULE_RE))
         }
-        if (body.contains("bildirishnoma") || body.contains("yangi xabarlar bormi") || body.contains("kim yozdi")) {
-            return ResolvedIntent(IntentType.READ_NOTIFICATIONS, 0.93f)
+        if (DELETE_RE.containsMatchIn(t)) {
+            return hit(IntentType.DELETE_TASK, 0.85f, ResolvedIntent.TITLE to titleFrom(cmd.remainder, DELETE_RE))
         }
-
-        // 6. Email (Gmail)
-        if (body.contains("xatlarni o'qi") || body.contains("pochta") || body.contains("yangi email")) {
-            return ResolvedIntent(IntentType.EMAIL_READ, 0.92f)
+        if (SUMMARY_RE.containsMatchIn(t)) return hit(IntentType.DAY_SUMMARY, 0.9f)
+        if (ADD_RE.containsMatchIn(t)) {
+            val title = titleFrom(cmd.remainder, ADD_RE)
+            return hit(IntentType.ADD_TASK, if (title.isNotBlank()) 0.9f else 0.7f,
+                ResolvedIntent.TITLE to title,
+                ResolvedIntent.PRIORITY to priorityOf(t),
+                ResolvedIntent.CATEGORY to categoryOf(t))
         }
-        if (body.contains("email yubor") || body.contains("xat jo'nat")) {
-            return ResolvedIntent(IntentType.EMAIL_SEND, 0.90f, mapOf("body" to cmd.remainder))
+        if (SEARCH_RE.containsMatchIn(t)) {
+            return hit(IntentType.SEARCH_TASKS, 0.8f, ResolvedIntent.QUERY to strip(cmd.remainder, SEARCH_RE, FILLER_RE))
         }
-        if (body.contains("qoralama yoz") || body.contains("email yoz") || body.contains("xat tayyorla")) {
-            return ResolvedIntent(IntentType.EMAIL_DRAFT, 0.90f, mapOf("body" to cmd.remainder))
+        if (TIME_QUERY_RE.containsMatchIn(t)) return hit(IntentType.TIME_QUERY, 0.95f)
+        if (GREETING_RE.containsMatchIn(t)) return hit(IntentType.GREETING, 0.8f)
+        if (THANKS_RE.containsMatchIn(t)) return hit(IntentType.THANKS, 0.9f)
+        if (HELP_RE.containsMatchIn(t)) return hit(IntentType.HELP, 0.9f)
+        // A time plus a noun phrase ("ertaga soat 9 da uchrashuv") is almost always a new task.
+        if ((cmd.time != null || cmd.date != null || cmd.deadline != null) && cmd.remainder.split(' ').size in 1..6) {
+            return hit(IntentType.ADD_TASK, 0.6f,
+                ResolvedIntent.TITLE to titleFrom(cmd.remainder),
+                ResolvedIntent.PRIORITY to priorityOf(t),
+                ResolvedIntent.CATEGORY to categoryOf(t))
         }
-
-        // 7. Taqvim (Google Calendar)
-        if (body.contains("taqvimdan o'chir") || body.contains("uchrashuvni bekor qil")) {
-            val title = extractCleanTitle(cmd.remainder)
-            return ResolvedIntent(IntentType.CALENDAR_DELETE, 0.92f, mapOf("title" to title))
-        }
-        if (body.contains("taqvimda nima bor") || body.contains("uchrashuvlarim") || body.contains("kalendarni o'qi")) {
-            return ResolvedIntent(IntentType.CALENDAR_READ, 0.93f)
-        }
-
-        // 8. Fayl qidirish
-        Regex("(?:faylni\\s+top|hujjatni\\s+och|fayl\\s+qidir)\\s*(.*)").find(body)?.let { m ->
-            val q = cleanEntityName(m.groupValues[1].ifBlank { cmd.remainder })
-            return ResolvedIntent(IntentType.FIND_FILE, 0.92f, mapOf("query" to q))
-        }
-
-        // 9. Xotira (Eslab qol / Eslat / Unut)
-        Regex("^(?:eslab\\s+qol|xotiraga\\s+yoz|yodda\\s+saqla)[:\\s]+(.+)$").find(body)?.let { m ->
-            return ResolvedIntent(IntentType.REMEMBER, 0.96f, mapOf("fact" to m.groupValues[1].trim()))
-        }
-        Regex("^(.+?)\\s+(?:eslab\\s+qol|yodda\\s+tut)$").find(body)?.let { m ->
-            return ResolvedIntent(IntentType.REMEMBER, 0.95f, mapOf("fact" to m.groupValues[1].trim()))
-        }
-        if (body.contains("men haqimda nima bilasan") || body.contains("esingdami") || (body.startsWith("mening ") && body.endsWith(" nima"))) {
-            return ResolvedIntent(IntentType.RECALL, 0.92f, mapOf("query" to cmd.remainder))
-        }
-        if (body.startsWith("unut ") || body.endsWith("xotiradan o'chir")) {
-            val q = extractCleanTitle(cmd.remainder)
-            return ResolvedIntent(IntentType.FORGET, 0.93f, mapOf("query" to q))
-        }
-
-        // 10. Odat (Habit)
-        if (body.contains("har kuni") || body.contains("odat qo'sh") || body.contains("odatim")) {
-            val title = extractCleanTitle(cmd.remainder)
-            return ResolvedIntent(IntentType.ADD_HABIT, 0.94f, mapOf("title" to title))
-        }
-
-        // 11. Vazifani bajarilgan qilish (Complete Task)
-        if (body.contains("bajarildi") || body.contains("bajardim") || body.contains("bitdi") || body.contains("yakunlandi") || body.contains("tayyor bo'ldi")) {
-            val title = extractCleanTitle(cmd.remainder)
-            return ResolvedIntent(IntentType.COMPLETE_TASK, 0.96f, mapOf("title" to title))
-        }
-
-        // 12. Vazifani o'chirish (Delete Task)
-        if (body.contains("vazifani o'chir") || body.contains("rejadan olib tashla") || body.endsWith("ni o'chir") || body.startsWith("o'chir ")) {
-            val title = extractCleanTitle(cmd.remainder)
-            return ResolvedIntent(IntentType.DELETE_TASK, 0.95f, mapOf("title" to title))
-        }
-
-        // 13. Vazifani boshqa vaqtga ko'chirish (Reschedule Task)
-        if (body.contains("ko'chir") || body.contains("surib qo'y") || body.contains("kechiktir") || body.contains("vaqtini o'zgartir")) {
-            val title = extractCleanTitle(cmd.remainder)
-            return ResolvedIntent(IntentType.RESCHEDULE_TASK, 0.94f, mapOf("title" to title))
-        }
-
-        // 14. Kunlik reja, xulosa, ro'yxat va ish unumdorligi
-        if (body.contains("kunni rejalashtir") || body.contains("jadval tuz") || body.contains("bo'sh vaqtga joyla")) {
-            return ResolvedIntent(IntentType.PLAN_DAY, 0.95f)
-        }
-        if (body.contains("kunlik xulosa") || body.contains("bugungi hisobot") || body.contains("bugun nima qildim") || body.contains("bugungi reja")) {
-            return ResolvedIntent(IntentType.DAY_SUMMARY, 0.95f)
-        }
-        if (body.contains("vazifalar ro'yxati") || body.contains("qanday vazifalar bor") || body.contains("nima ishlarim bor") || body.contains("bajarilmagan vazifalar")) {
-            return ResolvedIntent(IntentType.LIST_PENDING, 0.95f)
-        }
-        if (body.contains("ishlash odatlarim") || body.contains("unumdorlik") || body.contains("qachon yaxshi ishlayman")) {
-            return ResolvedIntent(IntentType.WORK_PATTERNS, 0.93f)
-        }
-        if (body.startsWith("vazifa qidir") || body.contains("vazifalar ichidan top")) {
-            val q = extractCleanTitle(cmd.remainder)
-            return ResolvedIntent(IntentType.SEARCH_TASKS, 0.92f, mapOf("query" to q))
-        }
-
-        // 15. Eslatma (Reminder)
-        if (body.contains("eslatma") || body.contains("eslatib qo'y") || body.contains("esimga sol") || body.contains("budilnik") || body.contains("taymer")) {
-            val title = extractCleanTitle(cmd.remainder).ifBlank { "Eslatma" }
-            return ResolvedIntent(IntentType.ADD_REMINDER, 0.96f, mapOf("title" to title))
-        }
-
-        // 16. Vazifa qo'shish (Add Task) вЂ” aniq kalit so'zlar yoki vaqt/sana + harakat bo'lganda
-        if (
-            body.contains("vazifa qo'sh") ||
-            body.contains("rejaga qo'sh") ||
-            body.contains("yozib qo'y") ||
-            body.contains("qo'shib qo'y") ||
-            body.contains("qilishim kerak") ||
-            body.contains("borishim kerak") ||
-            ((cmd.time != null || cmd.date != null) && cmd.remainder.isNotBlank())
-        ) {
-            val title = extractCleanTitle(cmd.remainder)
-            if (title.isNotBlank()) {
-                return ResolvedIntent(IntentType.ADD_TASK, 0.94f, mapOf("title" to title))
-            }
-        }
-
-        return ResolvedIntent(IntentType.UNKNOWN, 0.35f, mapOf("query" to cmd.body))
+        return hit(IntentType.UNKNOWN, 0.1f)
     }
 
-    private fun extractCleanTitle(raw: String): String {
-        val noisePatterns = listOf(
-            Regex("^(?:iltimos|jarvis|menga|shu|yangi)\\s+", RegexOption.IGNORE_CASE),
-            Regex("\\b(?:vazifani|vazifa|rejaga|rejani|eslatmani|eslatma|jadvalga)\\b", RegexOption.IGNORE_CASE),
-            Regex("\\b(?:qo'shib\\s+qo'y|yozib\\s+qo'y|eslatib\\s+qo'y|esimga\\s+sol|qo'sh|yarat|o'rnat|bajarildi\\s+deb\\s+belgila|bajarildi|bajardim|bitdi|o'chirib\\s+tashla|o'chir|ko'chirib\\s+qo'y|ko'chir)\\b", RegexOption.IGNORE_CASE),
-            Regex("\\b(?:deb|degan|nomli)\\b", RegexOption.IGNORE_CASE)
+    fun classifyMemory(content: String): String = when {
+        HABIT_STATEMENT_RE.containsMatchIn(content) -> "HABIT"
+        PROFILE_RE.containsMatchIn(content) -> "PROFILE"
+        PREFERENCE_RE.containsMatchIn(content) -> "PREFERENCE"
+        IMPORTANT_RE.containsMatchIn(content) -> "IMPORTANT"
+        else -> "FACT"
+    }
+
+    private fun titleFrom(remainder: String, vararg verbs: Regex): String {
+        val stripped = strip(remainder, *verbs, TASK_NOUN_RE, FILLER_RE, PRIORITY_WORDS_RE)
+            // Oxirgi so'zdagi tushum kelishigi: "borishni" -> "borish"
+            .replace(Regex("""(\w{3,})ni$"""), "$1")
+        return stripped.replaceFirstChar { it.uppercase() }
+    }
+
+    private fun strip(text: String, vararg patterns: Regex): String {
+        var out = text
+        for (p in patterns) out = out.replace(p, " ")
+        return out.replace(Regex("""\s+"""), " ").trim().trim(',', '.', '-', ':')
+    }
+
+    private fun stripDative(name: String): String {
+        val words = name.split(' ').filter { it.isNotBlank() }.toMutableList()
+        if (words.isEmpty()) return ""
+        val last = words.last()
+        val stripped = DATIVE_RE.replace(last, "")
+        if (stripped.length >= 3) words[words.lastIndex] = stripped
+        return words.joinToString(" ")
+    }
+
+    private fun priorityOf(t: String) = when {
+        Regex("""\b(muhim|tezkor|shoshilinch|zudlik|yuqori)\w*""").containsMatchIn(t) -> "HIGH"
+        Regex("""\b(past|shoshilmasdan|keyinroq)\w*""").containsMatchIn(t) -> "LOW"
+        else -> "MEDIUM"
+    }
+
+    private fun categoryOf(t: String) = when {
+        Regex("""\b(ish|majlis|uchrashuv|yig'ilish|loyiha|mijoz|hisobot|ofis)\w*""").containsMatchIn(t) -> "WORK"
+        Regex("""\b(dars|o'qish|imtihon|kurs|kitob|universitet|maktab)\w*""").containsMatchIn(t) -> "STUDY"
+        Regex("""\b(sport|yugur|mashq|zal|shifokor|doktor|dori|salomatlik|badantarbiya)\w*""").containsMatchIn(t) -> "HEALTH"
+        Regex("""\b(uy|bozor|ovqat|tozala|kir|xarid)\w*""").containsMatchIn(t) -> "HOME"
+        else -> "PERSONAL"
+    }
+
+    companion object {
+        private val HHMM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+        private val STOP_RE = Regex("""(?:tugat|to'xta|to'xtat|bas|yetarli|xayr|stop|o'chir o'zingni|jim bo'l)(?:ing|gin|ish)?""")
+        private val START_RE = Regex("""(?:boshla|boshlaymiz|boshlagin|ishga tush|uyg'on|tayyormisan|eshit|eshityapsanmi|labbay)""")
+
+        private val PATTERNS_RE = Regex("""\b(?:ish odatlari\w*|ish uslub\w*|qachon samarali|qaysi vaqtda samarali|samaradorlig\w*|unumdorlig\w*|ish tahlil\w*)""")
+        private val FORGET_RE = Regex("""\b(?:unut|esingdan chiqar|xotiradan o'chir)\w*""")
+        private val RECALL_RE = Regex("""\b(?:nimani eslab qolding|men haqimda|meni haqimda|eslaysanmi|xotirangda|nima bilasan|ismim nima|eslatib ber)\w*""")
+        private val REMEMBER_EXPLICIT_RE = Regex("""\b(?:eslab qol|yodda tut|yodingda tut|esingda tut|xotirangga yoz|unutma)\w*""")
+        private val PERSONAL_FACT_RE = Regex("""^(?:men\b.*\b(?:har kuni|har ertalab|har kech|har hafta|doim|odatda|yaxshi ko'raman|yoqtiraman|yoqmaydi|ishlayman|yashayman|o'qiyman)|mening\s+\w+|ismim\s+\w+)""")
+        private val HABIT_STATEMENT_RE = Regex("""\b(?:har kuni|har ertalab|har kech|har hafta|doim|odatda|kunda)\b""")
+        private val PROFILE_RE = Regex("""\b(?:ismim|ismi|yoshim|tug'ilgan|ishlayman|yashayman|kasbim|o'qiyman|familiyam)\w*""")
+        private val PREFERENCE_RE = Regex("""\b(?:yaxshi ko'raman|yoqtiraman|yoqmaydi|afzal|sevaman|ichmayman|yemayman)\w*""")
+        private val IMPORTANT_RE = Regex("""\b(?:muhim|parol emas|kod|raqam|manzil|sana)\w*""")
+
+        private val CAMERA_RE = Regex("""\b(?:kamera\w*|rasmga ol\w*|surat\w* ol\w*|rasm ol\w*|video\w* (?:ol|yoz)\w*|selfi\w*)""")
+        private val VIDEO_RE = Regex("""\bvideo""")
+        private val FILE_NOUN_RE = Regex("""\b(?:fayl\w*|pdf\w*|hujjat\w*|docx?\w*|word\w*|excel\w*|xlsx?\w*|pptx?\w*|taqdimot\w*|prezentatsiya\w*|txt)\b""")
+        private val FILE_VERB_RE = Regex("""\b(?:top|qidir|och|ko'rsat|izla)\w*""")
+        private val EXTENSIONS = linkedMapOf(
+            "pdf" to "pdf", "docx" to "doc", "doc" to "doc", "word" to "doc", "excel" to "xls", "xls" to "xls",
+            "pptx" to "ppt", "ppt" to "ppt", "taqdimot" to "ppt", "prezentatsiya" to "ppt", "txt" to "txt"
         )
-        var result = raw
-        for (p in noisePatterns) {
-            result = result.replace(p, " ")
-        }
-        result = result
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .trim(',', '.', '!', '?', '-', ':')
+        private val CALL_RE = Regex("""\b(?:bog'lan\w*|qo'ng'iroq\w*(?: qil\w*)?|telefon qil\w*|tel qil\w*|chaqir\w*|zvonok\w*|qo'ng'iroq)""")
+        private val DATIVE_RE = Regex("""(?:ga|ka|qa|gа)$""")
+        private val NOTIFICATION_RE = Regex("""\b(?:bildirishnoma\w*|xabarnoma\w*|notifikatsiya\w*|notification\w*|bildirish)""")
+        private val CLEAR_RE = Regex("""\b(?:tozala|o'chir|yop|tashla)\w*""")
+        private val EMAIL_RE = Regex("""\b(?:email\w*|e-mail\w*|pochta\w*|gmail\w*|xat\b|xatlar\w*|xatni|xatga|maktub\w*|xat yoz\w*|xat yubor\w*)""")
+        private val EMAIL_ADDRESS_RE = Regex("""[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}""")
+        private val SEND_RE = Regex("""\b(?:yubor|jo'nat)\w*""")
+        private val DRAFT_RE = Regex("""\b(?:qoralama\w*|tayyorla\w*|yoz\w*)""")
+        private val BODY_RE = Regex("""(?i)(?::|\bmatni\b|\bdeb yoz\b)\s*(.+)$""")
+        private val SUBJECT_RE = Regex("""\bmavzu(?:si)?\s+(.+?)(?:\s+matni\b|$)""")
+        private val RECIPIENT_RE = Regex("""^(?:\w+\s+){0,2}?(\w+?)(?:ga|ka|qa)\s+(?:xat|email|pochta)""")
+        private val CALENDAR_RE = Regex("""\b(?:taqvim\w*|kalendar\w*|calendar\w*|tadbir\w*)""")
 
-        if (result.endsWith("shni") && result.length > 6) {
-            result = result.removeSuffix("ni")
-        }
-        return result.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
-    }
+        private val REMINDER_RE = Regex("""\b(?:eslat\w*|budilnik\w*|signal qo'y\w*)""")
+        private val HABIT_RE = Regex("""\b(?:odat\w*)""")
+        private val PENDING_RE = Regex("""\b(?:tugallanmagan|bajarilmagan|qolgan|qilinmagan|kutilayotgan|tugatilmagan|bitmagan)\w*""")
+        private val PLAN_RE = Regex("""\b(?:reja\w*\s+tuz\w*|rejala\w*\s+tuz\w*|rejalashtirib ber\w*|kunimni rejala\w*|kunni rejala\w*|jadval\w* tuz\w*|kun tartib\w* tuz\w*|rejani yangila\w*)""")
+        private val COMPLETE_RE = Regex("""\b(?:bajardim|bajarildi|bajarib bo'ldim|bajarilgan|tugatdim|tugatildi|tugataman|tugalladim|tugallandi|bitdi|bitirdim|qildim|qo'ydim|tayyor bo'ldi|belgila\w*)""")
+        private val RESCHEDULE_RE = Regex("""\b(?:ko'chir\w*|sur\w*|o'zgartir\w*|kechiktir\w*)""")
+        private val DELETE_RE = Regex("""\b(?:o'chir\w*|bekor qil\w*|olib tashla\w*|yo'q qil\w*)""")
+        private val SUMMARY_RE = Regex("""\b(?:bugungi reja\w*|rejam\w*|rejalarim\w*|vazifalarim\w*|nima bor|nima ishlar|nechta vazifa\w*|kun tartib\w*|jadvalim\w*|nima qilishim kerak)""")
+        private val ADD_RE = Regex("""\b(?:qo'sh\w*|yarat\w*|rejalashtir\w*|kirit\w*|belgilab qo'y\w*|yozib qo'y\w*|yozib ol\w*|qo'yib qo'y\w*)""")
+        private val SEARCH_RE = Regex("""\b(?:qidir\w*|top\b|topib ber\w*|izla\w*)""")
+        private val TIME_QUERY_RE = Regex("""\b(?:soat necha|necha bo'ldi|bugun nechanchi|qaysi kun|bugun qanday kun|sana qanday)""")
+        private val GREETING_RE = Regex("""\b(?:salom|assalomu|assalom|hayrli tong|xayrli tong|hayrli kech|xayrli kech|qalaysan|qalay)\w*""")
+        private val THANKS_RE = Regex("""\b(?:rahmat|tashakkur|barakalla|ofarin|zo'r)\w*""")
+        private val HELP_RE = Regex("""\b(?:nima qila olasan|yordam|imkoniyat\w*|qanday buyruq\w*|kimsan)""")
 
-    private fun cleanEntityName(raw: String): String {
-        return raw
-            .replace(Regex("\\b(iltimos|jarvis|menga|tezda|hozir)\\b", RegexOption.IGNORE_CASE), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+        private val TASK_NOUN_RE = Regex("""\b(?:vazifa\w*|ish\s+(?=qo'sh)|topshiriq\w*|eslatma\w*|reja\w*|taqvimga|kalendarga)\b""")
+        private val PRIORITY_WORDS_RE = Regex("""\b(?:muhim|tezkor|shoshilinch)\b""")
+        private val FILLER_RE = Regex("""\b(?:iltimos|menga|mening|meni|mani|manga|uchun|kuni|bilan birga|deb|ni|ga|qilib|ber|qo'y|kerak|hamma|barcha|ham|endi|bitta|yangi|yana)\b""")
+        private val QUESTION_RE = Regex("""\b(?:nima|qanday|qaysi|mi)\b""")
     }
 }
