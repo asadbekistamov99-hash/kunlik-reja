@@ -69,6 +69,7 @@ class ActionExecutor(
         IntentType.DAY_SUMMARY -> daySummary(intent)
         IntentType.SEARCH_TASKS -> searchTasks(intent)
         IntentType.ADD_REMINDER -> addReminder(intent, parsed)
+        IntentType.DELETE_REMINDER -> deleteReminder(intent)
         IntentType.ADD_HABIT -> addHabit(intent)
         IntentType.REMEMBER -> remember(intent)
         IntentType.RECALL -> recall(intent)
@@ -300,6 +301,26 @@ class ActionExecutor(
         )
         val whenText = if (daily) "har kuni soat ${time.format(HHMM)} da" else "${dayPhrase(date)} soat ${time.format(HHMM)} da"
         return JarvisResponse("Xo'p, $whenText eslataman: $title.", intent.type)
+    }
+
+    private suspend fun deleteReminder(intent: ResolvedIntent): JarvisResponse {
+        val query = intent.slot(ResolvedIntent.TITLE)?.trim().orEmpty()
+        if (query.isBlank() || query.equals("eslatma", ignoreCase = true)) {
+            return JarvisResponse("Qaysi eslatmani o'chiray? Nomi bilan ayting.", intent.type, success = false)
+        }
+        val matches = reminders.findActive(query)
+        return when {
+            matches.isEmpty() -> JarvisResponse("\"$query\" nomli faol eslatma topilmadi.", intent.type, success = false)
+            matches.size > 1 -> JarvisResponse(
+                "Bir nechta mos eslatma topildi: ${matches.joinToString(", ") { it.title }}. Qaysi birini o'chiray?",
+                intent.type, expectsReply = true, success = false
+            )
+            else -> {
+                val reminder = matches.single()
+                reminders.cancelReminder(reminder.id)
+                JarvisResponse("\"${reminder.title}\" eslatmasi o'chirildi.", intent.type)
+            }
+        }
     }
 
     private suspend fun addHabit(intent: ResolvedIntent): JarvisResponse {
