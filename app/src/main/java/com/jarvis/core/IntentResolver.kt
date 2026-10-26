@@ -284,7 +284,7 @@ class IntentResolver {
         private val CALENDAR_RE = Regex("""\b(?:taqvim\w*|kalendar\w*|calendar\w*|tadbir\w*)""")
 
         private val REMINDER_RE = Regex("""\b(?:eslat\w*|budilnik\w*|signal qo'y\w*)""")
-        private val REMINDER_LIST_RE = Regex("""\\b(?:eslatmalar?\\w*|budilniklar\\w*)\\b.*\\b(?:ko'rsat|ayt|sanab|ro'yxat|bor)\\w*""")
+        private val REMINDER_LIST_RE = Regex("""\b(?:eslatmalar?\w*|budilniklar\w*)\b.*\b(?:ko'rsat|ayt|sanab|ro'yxat|bor)\w*""")
         private val HABIT_RE = Regex("""\b(?:odat\w*)""")
         private val PENDING_RE = Regex("""\b(?:tugallanmagan|bajarilmagan|qolgan|qilinmagan|kutilayotgan|tugatilmagan|bitmagan)\w*""")
         private val PLAN_RE = Regex("""\b(?:reja\w*\s+tuz\w*|rejala\w*\s+tuz\w*|rejalashtirib ber\w*|kunimni rejala\w*|kunni rejala\w*|jadval\w* tuz\w*|kun tartib\w* tuz\w*|rejani yangila\w*)""")
