@@ -107,6 +107,29 @@ class ActionExecutor(
             device.clearNotifications()
             JarvisResponse("Barcha bildirishnomalar tozalandi.", intent.type)
         }
+        IntentType.CALL_CONTACT -> {
+            val name = intent.slot(ResolvedIntent.CONTACT).orEmpty()
+            val contact = device.findContacts(name).firstOrNull()
+                ?: return JarvisResponse("Kontakt topilmadi.", intent.type, success = false)
+            JarvisResponse(
+                launchReply(device.call(contact), "${contact.name} raqamiga qo'ng'iroq qilinmoqda.", "Qo'ng'iroq"),
+                intent.type
+            )
+        }
+        IntentType.DELETE_TASK -> {
+            val title = intent.slot(ResolvedIntent.TITLE).orEmpty()
+            val task = tasks.findByTitle(title)
+                ?: return JarvisResponse("Vazifa topilmadi.", intent.type, success = false)
+            tasks.deleteTask(task)
+            JarvisResponse("\"${task.title}\" vazifasi o'chirildi.", intent.type)
+        }
+        IntentType.DELETE_REMINDER -> {
+            val title = intent.slot(ResolvedIntent.TITLE).orEmpty()
+            val reminder = reminders.findActive(title).singleOrNull()
+                ?: return JarvisResponse("Eslatma topilmadi.", intent.type, success = false)
+            reminders.cancelReminder(reminder.id)
+            JarvisResponse("\"${reminder.title}\" eslatmasi o'chirildi.", intent.type)
+        }
         else -> execute(intent, ParsedCommand("", "", "", false))
     }
 
