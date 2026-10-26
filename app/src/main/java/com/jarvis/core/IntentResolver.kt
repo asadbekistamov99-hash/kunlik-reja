@@ -16,6 +16,7 @@ enum class IntentType {
     SEARCH_TASKS,
     ADD_REMINDER,
     DELETE_REMINDER,
+    LIST_REMINDERS,
     ADD_HABIT,
     REMEMBER,
     RECALL,
@@ -150,6 +151,7 @@ class IntentResolver {
             } else hit(IntentType.CALENDAR_READ, 0.9f)
         }
 
+        if (REMINDER_LIST_RE.containsMatchIn(t)) return hit(IntentType.LIST_REMINDERS, 0.98f)
         // Check deletion before creation so delete commands never create a reminder.
         if (REMINDER_RE.containsMatchIn(t) && DELETE_RE.containsMatchIn(t)) {
             return hit(IntentType.DELETE_REMINDER, 0.98f,
@@ -282,6 +284,7 @@ class IntentResolver {
         private val CALENDAR_RE = Regex("""\b(?:taqvim\w*|kalendar\w*|calendar\w*|tadbir\w*)""")
 
         private val REMINDER_RE = Regex("""\b(?:eslat\w*|budilnik\w*|signal qo'y\w*)""")
+        private val REMINDER_LIST_RE = Regex("""\b(?:eslatmalar?\w*|budilniklar\w*)\b.*\b(?:ko'rsat|ayt|sanab|ro'yxat|bor)\w*""")
         private val HABIT_RE = Regex("""\b(?:odat\w*)""")
         private val PENDING_RE = Regex("""\b(?:tugallanmagan|bajarilmagan|qolgan|qilinmagan|kutilayotgan|tugatilmagan|bitmagan)\w*""")
         private val PLAN_RE = Regex("""\b(?:reja\w*\s+tuz\w*|rejala\w*\s+tuz\w*|rejalashtirib ber\w*|kunimni rejala\w*|kunni rejala\w*|jadval\w* tuz\w*|kun tartib\w* tuz\w*|rejani yangila\w*)""")

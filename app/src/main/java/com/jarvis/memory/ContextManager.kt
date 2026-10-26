@@ -1,6 +1,7 @@
 package com.jarvis.memory
 
 import com.example.data.Task
+import com.example.data.Reminder
 import com.jarvis.core.IntentType
 import com.jarvis.core.ResolvedIntent
 import com.jarvis.integrations.ContactHit
@@ -14,6 +15,8 @@ class ContextManager {
     @Volatile var lastIntent: IntentType? = null
         private set
     @Volatile var lastTasks: List<Task> = emptyList()
+        private set
+    @Volatile var lastReminders: List<Reminder> = emptyList()
         private set
     @Volatile var lastFiles: List<FileHit> = emptyList()
         private set
@@ -34,6 +37,7 @@ class ContextManager {
     }
 
     fun rememberTasks(tasks: List<Task>) { lastTasks = tasks.take(20) }
+    fun rememberReminders(reminders: List<Reminder>) { lastReminders = reminders.take(20) }
     fun rememberFiles(files: List<FileHit>) { lastFiles = files.take(20) }
     fun rememberContacts(contacts: List<ContactHit>) { lastContacts = contacts.take(20) }
 
@@ -50,6 +54,7 @@ class ContextManager {
     fun clear() {
         lastIntent = null
         lastTasks = emptyList()
+        lastReminders = emptyList()
         lastFiles = emptyList()
         lastContacts = emptyList()
         pendingConfirmation = null

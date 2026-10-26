@@ -49,6 +49,8 @@ import com.jarvis.voice.VoskSpeechToText
 import com.jarvis.voice.WhisperSpeechToText
 import com.example.repository.TaskRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -68,6 +70,21 @@ class AppContainer(
     secureStoreOverride: SecureStore? = null
 ) {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val reminderAnnouncements = Channel<String>(capacity = 32)
+
+    init {
+        appScope.launch {
+            for (text in reminderAnnouncements) {
+                while (voice.isBusy) delay(250)
+                val s = settings.state.first()
+                if (!s.speakReminders) continue
+                withContext(Dispatchers.Main) {
+                    tts.configure(s.ttsLanguage, s.ttsRate, s.voiceGender, s.ttsEngine)
+                    tts.speak(text)
+                }
+            }
+        }
+    }
 
     val secureStore: SecureStore by lazy { secureStoreOverride ?: SecureStore(context) }
     val permissions by lazy { PermissionManager(context) }
@@ -202,14 +219,10 @@ class AppContainer(
         }
     }
 
-    /** Speaks reminder announcements when enabled and Jarvis isn't mid-conversation. */
+    /** Queues reminder announcements so they are not lost during another voice turn. */
     suspend fun announce(text: String) {
-        val s = settings.state.first()
-        if (!s.speakReminders || voice.isBusy) return
-        withContext(Dispatchers.Main) {
-            tts.configure(s.ttsLanguage, s.ttsRate, s.voiceGender, s.ttsEngine)
-            tts.speak(text)
-        }
+        if (text.isBlank()) return
+        reminderAnnouncements.trySend(text)
     }
 
     // ---- port adapters ----
