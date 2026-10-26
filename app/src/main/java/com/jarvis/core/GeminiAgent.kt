@@ -46,6 +46,14 @@ class GeminiAgent(
                 put("temperature", 0.15)
                 put("maxOutputTokens", 512)
                 put("responseMimeType", "application/json")
+                put("responseSchema", JSONObject().apply {
+                    put("type", "OBJECT")
+                    put("properties", JSONObject().apply {
+                        put("intent", JSONObject().put("type", "STRING"))
+                        put("confidence", JSONObject().put("type", "NUMBER"))
+                        put("slots", JSONObject().apply { put("type", "OBJECT") })
+                    })
+                })
             })
         }
 
@@ -55,9 +63,9 @@ class GeminiAgent(
             .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
             .build()
 
-        val url = if (endpoint.contains("?key=")) endpoint else "$endpoint?key=$key"
         val req = Request.Builder()
-            .url(url)
+            .url(endpoint)
+            .header("x-goog-api-key", key)
             .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
             .build()
 
@@ -140,13 +148,13 @@ Qoidalar:
                 val k = keys.next()
                 val v = slotsJson.optString(k, "").trim()
                 if (v.isNotEmpty() && v != "null") {
-                    slotsMap[k] = v
+                    slotsMap[if (k == "reply") ResolvedIntent.ANSWER else k] = v
                 }
             }
         }
         val topReply = obj.optString("reply", "").trim()
         if (topReply.isNotEmpty() && !slotsMap.containsKey("reply")) {
-            slotsMap["reply"] = topReply
+            slotsMap[ResolvedIntent.ANSWER] = topReply
         }
 
         return ResolvedIntent(
