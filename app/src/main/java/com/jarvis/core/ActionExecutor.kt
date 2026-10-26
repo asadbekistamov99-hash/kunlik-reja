@@ -70,6 +70,7 @@ class ActionExecutor(
         IntentType.SEARCH_TASKS -> searchTasks(intent)
         IntentType.ADD_REMINDER -> addReminder(intent, parsed)
         IntentType.DELETE_REMINDER -> deleteReminder(intent)
+        IntentType.LIST_REMINDERS -> listReminders(intent)
         IntentType.ADD_HABIT -> addHabit(intent)
         IntentType.REMEMBER -> remember(intent)
         IntentType.RECALL -> recall(intent)
@@ -306,21 +307,43 @@ class ActionExecutor(
     private suspend fun deleteReminder(intent: ResolvedIntent): JarvisResponse {
         val query = intent.slot(ResolvedIntent.TITLE)?.trim().orEmpty()
         if (query.isBlank() || query.equals("eslatma", ignoreCase = true)) {
-            return JarvisResponse("Qaysi eslatmani o'chiray? Nomi bilan ayting.", intent.type, success = false)
+            context.pendingIntent = intent.copy(slots = intent.slots - ResolvedIntent.TITLE)
+            context.awaitingSlot = ResolvedIntent.TITLE
+            return JarvisResponse("Qaysi eslatmani o'chiray? Nomi yoki raqamini ayting.", intent.type, expectsReply = true, success = false)
         }
         val matches = reminders.findActive(query)
         return when {
             matches.isEmpty() -> JarvisResponse("\"$query\" nomli faol eslatma topilmadi.", intent.type, success = false)
-            matches.size > 1 -> JarvisResponse(
-                "Bir nechta mos eslatma topildi: ${matches.joinToString(", ") { it.title }}. Qaysi birini o'chiray?",
-                intent.type, expectsReply = true, success = false
-            )
+            matches.size > 1 -> {
+                context.rememberReminders(matches)
+                context.pendingIntent = intent.copy(slots = intent.slots - ResolvedIntent.TITLE)
+                context.awaitingSlot = ResolvedIntent.TITLE
+                JarvisResponse(
+                    "Bir nechta mos eslatma topildi: ${matches.mapIndexed { i, r -> "${i + 1}. ${r.title}" }.joinToString(", ")}. Qaysi birini o'chiray?",
+                    intent.type, expectsReply = true, success = false
+                )
+            }
             else -> {
                 val reminder = matches.single()
                 reminders.cancelReminder(reminder.id)
                 JarvisResponse("\"${reminder.title}\" eslatmasi o'chirildi.", intent.type)
             }
         }
+    }
+
+    private suspend fun listReminders(intent: ResolvedIntent): JarvisResponse {
+        val active = reminders.activeReminders()
+        context.rememberReminders(active)
+        if (active.isEmpty()) return JarvisResponse("Faol eslatmalar yo'q.", intent.type)
+        val lines = active.take(10).mapIndexed { index, reminder ->
+            val at = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(reminder.triggerAtMillis), zone())
+            "${index + 1}. ${reminder.title}, ${at.toLocalDate()} soat ${at.toLocalTime().format(HHMM)}"
+        }
+        return JarvisResponse(
+            "Sizda ${active.size} ta faol eslatma bor. " + lines.joinToString(". ") + ".",
+            intent.type,
+            card = ResponseCard("Faol eslatmalar", lines)
+        )
     }
 
     private suspend fun addHabit(intent: ResolvedIntent): JarvisResponse {
