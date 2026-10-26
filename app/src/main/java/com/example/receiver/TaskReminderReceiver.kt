@@ -10,6 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /** Fires task/reminder notifications and handles the "Bajarildi" notification action. */
 class TaskReminderReceiver : BroadcastReceiver() {
@@ -26,7 +29,7 @@ class TaskReminderReceiver : BroadcastReceiver() {
                             if (task != null && !task.isCompleted) {
                                 val msg = "Soat ${task.timeString} — ${task.description.ifBlank { "vazifa vaqti yaqinlashdi" }}"
                                 NotificationHelper.showNotification(context, "⏰ ${task.title}", msg, task.id, taskId = task.id)
-                                container.announce("Eslatma: ${task.title}, soat ${task.timeString} da.")
+                                container.announce("Eslatma: ${task.title}. Belgilangan vaqt: ${task.dateString}, soat ${task.timeString}.")
                             }
                         }
                         ACTION_REMINDER_ALARM -> {
@@ -36,7 +39,8 @@ class TaskReminderReceiver : BroadcastReceiver() {
                                     context, "⏰ ${reminder.title}", reminder.message.ifBlank { "Jarvis eslatmasi" },
                                     100_000 + reminder.id.toInt()
                                 )
-                                container.announce("Eslatma: ${reminder.title}")
+                                val exactTime = DateTimeFormatter.ofPattern("dd MMMM, HH:mm").format(Instant.ofEpochMilli(reminder.triggerAtMillis).atZone(ZoneId.systemDefault()))
+                                container.announce("Eslatma: ${reminder.title}. Belgilangan vaqt: $exactTime. ${reminder.message}")
                             }
                         }
                         ACTION_MARK_COMPLETED -> {

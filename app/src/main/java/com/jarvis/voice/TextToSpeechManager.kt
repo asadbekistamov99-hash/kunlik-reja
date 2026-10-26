@@ -11,6 +11,10 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech as AndroidTts
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import android.util.Base64
+import android.util.Log
+import com.jarvis.settings.TtsEngineChoice
+import com.jarvis.settings.VoiceGender
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,6 +23,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -27,13 +32,46 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
-enum class VoiceGender { MALE, FEMALE }
-enum class TtsEngineChoice { ANDROID_DEFAULT, OPENAI_NEURAL, SYSTEM_CUSTOM }
-
 interface NeuralVoice {
     val id: String
     fun isAvailable(): Boolean
     suspend fun synthesize(text: String, gender: VoiceGender): ByteArray?
+}
+
+/** Gemini native TTS (gemini-2.5-flash-preview-tts): expressive multilingual voices. */
+class GeminiVoice(
+    private val http: OkHttpClient,
+    private val apiKey: () -> String?,
+    private val online: () -> Boolean,
+    private val endpoint: String = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+) : NeuralVoice {
+    override val id = "gemini"
+    override fun isAvailable() = !apiKey().isNullOrBlank() && online()
+
+    override suspend fun synthesize(text: String, gender: VoiceGender): ByteArray? = withContext(Dispatchers.IO) {
+        val key = apiKey() ?: return@withContext null
+        val body = JSONObject()
+            .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text",
+                "O'zbek tilida tabiiy, iliq va ravon, xuddi suhbatdoshdek gapiring: $text")))))
+            .put("generationConfig", JSONObject()
+                .put("responseModalities", JSONArray().put("AUDIO"))
+                .put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig",
+                    JSONObject().put("voiceName", voiceName(gender))))))
+        val request = Request.Builder().url(endpoint).header("x-goog-api-key", key)
+            .post(body.toString().toRequestBody(JSON_MEDIA)).build()
+        http.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) { Log.w("GeminiVoice", "HTTP ${resp.code}"); return@use null }
+            val data = JSONObject(resp.body?.string().orEmpty()).optJSONArray("candidates")?.optJSONObject(0)
+                ?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)
+                ?.optJSONObject("inlineData")?.optString("data")
+            data?.takeIf { it.isNotBlank() }?.let { Base64.decode(it, Base64.DEFAULT) }
+        }
+    }
+
+    companion object {
+        private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+        fun voiceName(gender: VoiceGender) = if (gender == VoiceGender.MALE) "Charon" else "Kore"
+    }
 }
 
 /**
@@ -49,8 +87,13 @@ class OpenAiVoice(
 ) : NeuralVoice {
     override val id: String = "openai"
 
+    companion object {
+        const val TTS_MODEL = "gpt-4o-mini-tts"
+        fun voiceName(gender: VoiceGender) = if (gender == VoiceGender.MALE) "onyx" else "nova"
+    }
+
     @Volatile
-    var model: String = "gpt-4o-mini-tts"
+    var model: String = TTS_MODEL
 
     @Volatile
     var speed: Float = 1.0f
@@ -91,7 +134,7 @@ class OpenAiVoice(
 
         runCatching {
             http.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext null
+                if (!resp.isSuccessful) return@use null
                 resp.body?.bytes()
             }
         }.getOrNull()
@@ -124,7 +167,17 @@ class TextToSpeechManager(
     private var gender: VoiceGender = VoiceGender.MALE
 
     @Volatile
-    private var engineChoice: TtsEngineChoice = TtsEngineChoice.OPENAI_NEURAL
+    private var engineChoice: TtsEngineChoice = TtsEngineChoice.AUTO
+
+    /** Ovoz manbai nomi (masalan, "gemini", "openai" yoki qurilma ovozi). */
+    @Volatile
+    var activeVoiceName: String = ""
+        private set
+
+    /** Oxirgi gapirgan mexanizm: neural voice id yoki "device". */
+    @Volatile
+    var lastEngine: String = "device"
+        private set
 
     private val audioManager: AudioManager? =
         context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -183,9 +236,13 @@ class TextToSpeechManager(
                 if (pcm != null && pcm.size > 1000 && !stopped.get()) {
                     val enhancedPcm = enhanceAndNormalizePcm24k(pcm)
                     val played = playPcm24kMono(enhancedPcm)
-                    if (played) return@withAudioFocus true
+                    if (played) {
+                        lastEngine = neural.id
+                        return@withAudioFocus true
+                    }
                 }
             }
+            lastEngine = "device"
             speakWithDevice(prepared)
         }
     }
@@ -205,9 +262,19 @@ class TextToSpeechManager(
         runCatching { tts?.shutdown() }
     }
 
+    /**
+     * Tanlangan mexanizm bo'yicha neural ovozni qaytaradi. Tanlangan provayder mavjud bo'lmasa,
+     * boshqa mavjud neural ovoz ishlatiladi; DEVICE tanlansa neural ovoz umuman ishlatilmaydi.
+     */
     private fun pickNeural(): NeuralVoice? {
-        if (engineChoice == TtsEngineChoice.ANDROID_DEFAULT) return null
-        return neuralVoices.firstOrNull { it.isAvailable() }
+        if (engineChoice == TtsEngineChoice.DEVICE) return null
+        val available = neuralVoices.filter { it.isAvailable() }
+        val preferredId = when (engineChoice) {
+            TtsEngineChoice.GEMINI -> "gemini"
+            TtsEngineChoice.OPENAI -> "openai"
+            else -> null
+        }
+        return available.firstOrNull { it.id == preferredId } ?: available.firstOrNull()
     }
 
     private fun applyVoice() {
@@ -261,7 +328,10 @@ class TextToSpeechManager(
                 score
             }
         if (best != null) {
-            runCatching { engine.voice = best }
+            runCatching {
+                engine.voice = best
+                activeVoiceName = best.name
+            }
         }
     }
 
@@ -443,5 +513,29 @@ class TextToSpeechManager(
 
     companion object {
         private const val NEURAL_TIMEOUT_MS = 9_000L
+
+        /** Matnni gaplarga bo'ladi, shunda qurilma ovozi gaplar orasida nafas oladi. */
+        fun splitSentences(text: String): List<String> =
+            text.trim().split(Regex("""(?<=[.!?…])\s+""")).map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf(text.trim()) }
+
+        /** Ovoz nomi yoki xususiyatlaridan "male"/"female" ni aniqlaydi; bilmasa null. */
+        fun genderOf(name: String, features: Set<String>): VoiceGender? {
+            val hay = (features.joinToString(" ") + " " + name).lowercase(Locale.ROOT)
+            return when {
+                Regex("""\bfemale\b|gender=female|#female|_female|-female""").containsMatchIn(hay) -> VoiceGender.FEMALE
+                Regex("""\bmale\b|gender=male|#male|_male|-male""").containsMatchIn(hay) -> VoiceGender.MALE
+                else -> null
+            }
+        }
+
+        /** Qurilma ovozlarini saralaydi: jins mosligi, sifat, so'ng oflayn mavjudligi. */
+        fun voiceScore(name: String, features: Set<String>, quality: Int, needsNetwork: Boolean, wanted: VoiceGender): Int {
+            val genderScore = when (genderOf(name, features)) {
+                wanted -> 1000
+                null -> 500
+                else -> 0
+            }
+            return genderScore + quality + (if (needsNetwork) 0 else 50)
+        }
     }
 }

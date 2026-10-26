@@ -74,7 +74,7 @@ class OpenWakeWordEngine(
     private var lastDetection = 0L
 
     /** Maps the 0.1..0.95 sensitivity slider to a score threshold (higher sensitivity = lower threshold). */
-    private val threshold: Float get() = (0.85f - sensitivity * 0.6f).coerceIn(0.25f, 0.8f)
+    private val threshold: Float get() = (0.82f - sensitivity * 0.68f).coerceIn(0.16f, 0.8f)
 
     override fun start(onDetected: () -> Unit, onError: (Throwable) -> Unit) {
         val m = try {

@@ -66,7 +66,7 @@ class VoskKeywordEngine(
     override val name = "Vosk"
     override val keywordLabel = "Jarvis"
     private val audio = AudioListener(context, frameSize = FRAME)
-    private val matcher = JarvisKeywordMatcher((0.98f - sensitivity * 0.3f).coerceIn(0.6f, 0.95f))
+    private val matcher = JarvisKeywordMatcher((0.96f - sensitivity * 0.38f).coerceIn(0.58f, 0.95f))
     private var recognizer: Recognizer? = null
     private var lastDetection = 0L
 
