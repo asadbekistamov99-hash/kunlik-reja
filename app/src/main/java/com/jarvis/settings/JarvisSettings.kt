@@ -19,7 +19,7 @@ enum class TtsEngineChoice { AUTO, DEVICE, GEMINI, OPENAI }
 data class SettingsSnapshot(
     val assistantEnabled: Boolean = false,
     val wakeEngine: WakeEngineChoice = WakeEngineChoice.AUTO,
-    val wakeSensitivity: Float = 0.5f,
+    val wakeSensitivity: Float = 0.72f,
     val sttEngine: SttEngineChoice = SttEngineChoice.AUTO,
     val aiMode: AiMode = AiMode.HYBRID,
     val ttsLanguage: String = "auto",
