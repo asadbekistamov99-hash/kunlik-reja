@@ -41,6 +41,13 @@ class CommandParserTest {
         assertEquals(LocalTime.of(8, 0), parser.parse("soat 8 da nonushta").time)
     }
 
+    @Test fun `tushdan keyin without hour is 14 00 and with hour is afternoon`() {
+        val bare = parser.parse("ertaga tushdan keyin yurish")
+        assertEquals(LocalTime.of(14, 0), bare.time)
+        assertEquals(LocalDate.of(2026, 9, 24), bare.date)
+        assertEquals(LocalTime.of(15, 0), parser.parse("tushdan keyin soat 3 da yurish").time)
+    }
+
     @Test fun `relative minutes and hours`() {
         val p = parser.parse("30 daqiqadan keyin suv ichishni eslat")
         assertTrue(p.isRelative)
