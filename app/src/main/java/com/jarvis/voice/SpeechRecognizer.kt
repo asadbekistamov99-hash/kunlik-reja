@@ -207,7 +207,7 @@ class WhisperSpeechToText(
         if (pcmSamples.size < SAMPLE_RATE / 3) return@withContext null
 
         val normalizedPcm = normalizeGain(pcmSamples)
-        val wavBytes = encodeWav16BitMono(normalizedPcm, SAMPLE_RATE)
+        val wavBytes = wav(normalizedPcm, SAMPLE_RATE)
 
         val key = apiKey()?.trim() ?: return@withContext null
         val multipart = MultipartBody.Builder()
