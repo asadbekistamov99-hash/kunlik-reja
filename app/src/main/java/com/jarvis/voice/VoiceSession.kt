@@ -115,12 +115,12 @@ class VoiceSession(
             _state.update { it.copy(status = AssistantStatus.LISTENING, partial = "", error = null, level = 0f, listenCount = it.listenCount + 1) }
             val text = try {
                 var alts: List<String> = emptyList()
-                val (heard, engineId) = stt.listen(object : SttEvents {
+                val heard = stt.listen(object : SttEvents {
                     override fun onPartial(text: String) = _state.update { it.copy(partial = text) }
                     override fun onLevel(level: Float) = _state.update { it.copy(level = level) }
                     override fun onAlternatives(alternatives: List<String>) { alts = alternatives }
                 })
-                _state.update { it.copy(sttEngine = engineId) }
+                _state.update { it.copy(sttEngine = stt.lastEngineId) }
                 // Of the recognizer's guesses, act on the one Jarvis understands best.
                 if (alts.size > 1) engine.bestTranscript(alts) ?: heard else heard
             } catch (e: CancellationException) {
