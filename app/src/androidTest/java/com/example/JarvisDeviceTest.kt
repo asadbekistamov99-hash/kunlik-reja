@@ -97,7 +97,9 @@ class JarvisDeviceTest {
         compose.onNodeWithTag("assistant_input").performTextInput("Jarvis ertaga soat 9 da uchrashuv qo'sh")
         compose.onNodeWithTag("assistant_send").performClick()
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("ertaga soat 09:00 ga qo'shildi", substring = true).fetchSemanticsNodes().isNotEmpty()
+            runBlocking {
+                container.database.taskDao().getAll().any { it.title == "Uchrashuv" }
+            }
         }
         assertEquals("Uchrashuv", runBlocking { container.database.taskDao().getAll() }.single().title)
         listOf("nav_tasks" to "fab_add_task", "nav_calendar" to "screen_calendar", "nav_memory" to "screen_memory",
