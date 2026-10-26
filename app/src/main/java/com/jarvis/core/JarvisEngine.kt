@@ -73,6 +73,10 @@ class JarvisEngine(
                 slot != ResolvedIntent.BODY && slot != ResolvedIntent.CONTENT) return null
             val value = when (slot) {
                 ResolvedIntent.TIME -> parsed.time?.let { "%02d:%02d".format(it.hour, it.minute) }
+                ResolvedIntent.TITLE -> context.referencedIndex(body)?.let { index ->
+                    if (index < 0) context.lastReminders.lastOrNull()?.title
+                    else context.lastReminders.getOrNull(index)?.title
+                } ?: parsed.body.replaceFirstChar { it.uppercase() }
                 ResolvedIntent.BODY, ResolvedIntent.CONTENT -> parsed.original.trim()
                 else -> parsed.body.replaceFirstChar { it.uppercase() }
             } ?: return null
