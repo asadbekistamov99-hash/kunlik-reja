@@ -21,6 +21,7 @@ import java.io.File
 import java.util.zip.ZipInputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * A downloadable Vosk model stored under filesDir/[dirName]. Loaded once and shared.
@@ -128,8 +129,12 @@ class VoskSpeechToText(val model: VoskModel) : SpeechToText {
                     cont.resumeWithException(SttException("Mikrofon band: ${e.message}"))
                     return@suspendCancellableCoroutine
                 }
+                val finished = AtomicBoolean(false)
                 fun finish(result: String?) {
-                    service.stop(); service.shutdown(); recognizer.close()
+                    if (!finished.compareAndSet(false, true)) return
+                    runCatching { service.stop() }
+                    runCatching { service.shutdown() }
+                    runCatching { recognizer.close() }
                     if (cont.isActive) cont.resume(result)
                 }
                 events.onReady()
@@ -146,7 +151,9 @@ class VoskSpeechToText(val model: VoskModel) : SpeechToText {
                         finish(hypothesis?.let { runCatching { JSONObject(it).optString("text") }.getOrNull() }?.ifBlank { null })
                     }
                     override fun onError(exception: Exception?) {
-                        service.shutdown(); recognizer.close()
+                        if (!finished.compareAndSet(false, true)) return
+                        runCatching { service.shutdown() }
+                        runCatching { recognizer.close() }
                         if (cont.isActive) cont.resumeWithException(SttException(exception?.message ?: "Vosk xatosi"))
                     }
                     override fun onTimeout() = finish(null)
