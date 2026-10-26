@@ -120,7 +120,7 @@ class VoiceSession(
                     override fun onLevel(level: Float) = _state.update { it.copy(level = level) }
                     override fun onAlternatives(alternatives: List<String>) { alts = alternatives }
                 })
-                _state.update { it.copy(sttEngine = stt.lastEngineId) }
+                _state.update { it.copy(sttEngine = stt.id) }
                 // Of the recognizer's guesses, act on the one Jarvis understands best.
                 if (alts.size > 1) engine.bestTranscript(alts) ?: heard else heard
             } catch (e: CancellationException) {
