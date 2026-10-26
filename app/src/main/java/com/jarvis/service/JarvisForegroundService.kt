@@ -122,6 +122,8 @@ class JarvisForegroundService : LifecycleService(), WakeController {
         isRunning = false
         runCatching { unregisterReceiver(systemReceiver) }
         if (::container.isInitialized) {
+            // Stop any active STT/TTS turn before releasing the service-owned microphone.
+            container.voice.cancel()
             container.voice.wakeController = null
             container.voice.setStandby(AssistantStatus.OFF)
         }
@@ -181,6 +183,8 @@ class JarvisForegroundService : LifecycleService(), WakeController {
                 engine.start(
                     onDetected = { lifecycleScope.launch(Dispatchers.Main) { container.voice.onWakeWord() } },
                     onError = { e ->
+                        // Ignore a late callback from an engine that has already been replaced.
+                        if (wakeEngine !== engine) return@start
                         Log.e(TAG, "Wake word engine error", e)
                         detectionActive = false
                         lifecycleScope.launch(Dispatchers.Main) {
