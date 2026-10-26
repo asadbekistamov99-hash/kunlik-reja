@@ -37,6 +37,9 @@ class ReminderEngine(
         reminderDao.delete(id)
     }
 
+    /** Returns active reminders ordered by their next trigger time. */
+    suspend fun activeReminders(): List<Reminder> = reminderDao.getActive()
+
     /** Returns active reminders whose title contains all words from the spoken query. */
     suspend fun findActive(query: String): List<Reminder> {
         val words = normalize(query).split(' ').filter { it.isNotBlank() }
