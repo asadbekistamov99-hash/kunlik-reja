@@ -37,6 +37,16 @@ class ReminderEngine(
         reminderDao.delete(id)
     }
 
+    /** Returns active reminders whose title contains all words from the spoken query. */
+    suspend fun findActive(query: String): List<Reminder> {
+        val words = normalize(query).split(' ').filter { it.isNotBlank() }
+        if (words.isEmpty()) return emptyList()
+        return reminderDao.getActive().filter { reminder ->
+            val title = normalize(reminder.title)
+            words.all { it in title }
+        }
+    }
+
     fun schedule(reminder: Reminder) {
         if (!reminder.isActive) return
         val trigger = nextTrigger(reminder, clock()) ?: return
@@ -111,6 +121,10 @@ class ReminderEngine(
             .putExtra(TaskReminderReceiver.EXTRA_REMINDER_ID, id),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
+
+    private fun normalize(value: String): String = value.lowercase()
+        .replace(Regex("[^\\\\p{L}\\\\p{N} ]"), " ")
+        .replace(Regex("\\\\s+"), " ").trim()
 
     companion object {
         private const val TAG = "ReminderEngine"
