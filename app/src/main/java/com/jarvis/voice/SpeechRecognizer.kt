@@ -96,8 +96,11 @@ class AndroidSpeechToText(
                     override fun onEndOfSpeech() {}
 
                     override fun onError(error: Int) {
+                        // A partial hypothesis is often incomplete (or stale) after a recognizer
+                        // error. Return null so the router can try Whisper/Vosk instead of
+                        // executing a truncated command.
                         if (!resultDeferred.isCompleted) {
-                            resultDeferred.complete(latestPartial.takeIf { it.isNotBlank() })
+                            resultDeferred.complete(null)
                         }
                     }
 

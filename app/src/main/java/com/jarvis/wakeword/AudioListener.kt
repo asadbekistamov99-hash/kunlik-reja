@@ -54,6 +54,10 @@ class AudioListener(
                     while (read < frameSize && running.get()) {
                         val n = record.read(frame, read, frameSize - read)
                         if (n < 0) throw IllegalStateException("AudioRecord read error $n")
+                        if (n == 0) {
+                            Thread.yield()
+                            continue
+                        }
                         read += n
                     }
                     if (read == frameSize) onFrame(frame.copyOf())

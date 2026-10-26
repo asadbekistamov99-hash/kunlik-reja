@@ -122,6 +122,8 @@ class JarvisForegroundService : LifecycleService(), WakeController {
         isRunning = false
         runCatching { unregisterReceiver(systemReceiver) }
         if (::container.isInitialized) {
+            // Stop any active STT/TTS turn before releasing the service-owned microphone.
+            container.voice.cancel()
             container.voice.wakeController = null
             container.voice.setStandby(AssistantStatus.OFF)
         }
@@ -181,19 +183,22 @@ class JarvisForegroundService : LifecycleService(), WakeController {
                 engine.start(
                     onDetected = { lifecycleScope.launch(Dispatchers.Main) { container.voice.onWakeWord() } },
                     onError = { e ->
-                        Log.e(TAG, "Wake word engine error", e)
-                        detectionActive = false
-                        lifecycleScope.launch(Dispatchers.Main) {
-                            // Porcupine key rejected or Vosk model failed: fall back to the bundled engine once.
-                            if (engine.name != "openWakeWord") {
-                                wakeEngine?.release()
-                                val fallback = WakeWordEngineFactory.create(this@JarvisForegroundService,
-                                    com.jarvis.settings.WakeEngineChoice.OPEN_WAKE_WORD, null, container.settings.state.value.wakeSensitivity)
-                                wakeEngine = fallback
-                                container.voice.setStandby(AssistantStatus.STANDBY, fallback.name, fallback.keywordLabel)
-                                applyDetectionState()
-                            } else {
-                                container.voice.setStandby(AssistantStatus.ERROR)
+                        // Ignore a late callback from an engine that has already been replaced.
+                        if (wakeEngine === engine) {
+                            Log.e(TAG, "Wake word engine error", e)
+                            detectionActive = false
+                            lifecycleScope.launch(Dispatchers.Main) {
+                                // Porcupine key rejected or Vosk model failed: fall back to the bundled engine once.
+                                if (engine.name != "openWakeWord") {
+                                    wakeEngine?.release()
+                                    val fallback = WakeWordEngineFactory.create(this@JarvisForegroundService,
+                                        com.jarvis.settings.WakeEngineChoice.OPEN_WAKE_WORD, null, container.settings.state.value.wakeSensitivity)
+                                    wakeEngine = fallback
+                                    container.voice.setStandby(AssistantStatus.STANDBY, fallback.name, fallback.keywordLabel)
+                                    applyDetectionState()
+                                } else {
+                                    container.voice.setStandby(AssistantStatus.ERROR)
+                                }
                             }
                         }
                     }
