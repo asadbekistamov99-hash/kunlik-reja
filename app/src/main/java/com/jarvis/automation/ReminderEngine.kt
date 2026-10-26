@@ -126,8 +126,8 @@ class ReminderEngine(
     )
 
     private fun normalize(value: String): String = value.lowercase()
-        .replace(Regex("[^\\\\p{L}\\\\p{N} ]"), " ")
-        .replace(Regex("\\\\s+"), " ").trim()
+        .replace(Regex("[^\\p{L}\\p{N} ]"), " ")
+        .replace(Regex("\\s+"), " ").trim()
 
     companion object {
         private const val TAG = "ReminderEngine"
