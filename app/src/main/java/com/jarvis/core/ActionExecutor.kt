@@ -196,8 +196,8 @@ class ActionExecutor(
     private suspend fun deleteTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
         val task = resolveTask(intent, parsed)
             ?: return JarvisResponse("O'chiriladigan vazifani topa olmadim.", intent.type, success = false)
-        tasks.deleteTask(task)
-        return JarvisResponse("\"${task.title}\" o'chirildi.", intent.type)
+        context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to task.title))
+        return JarvisResponse("\"${task.title}\" vazifasini o'chiraymi?", intent.type, expectsReply = true)
     }
 
     private suspend fun rescheduleTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
@@ -325,8 +325,8 @@ class ActionExecutor(
             }
             else -> {
                 val reminder = matches.single()
-                reminders.cancelReminder(reminder.id)
-                JarvisResponse("\"${reminder.title}\" eslatmasi o'chirildi.", intent.type)
+                context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to reminder.title))
+                JarvisResponse("\"${reminder.title}\" eslatmasini o'chiraymi?", intent.type, expectsReply = true)
             }
         }
     }
@@ -458,7 +458,10 @@ class ActionExecutor(
         context.rememberContacts(found)
         return when (found.size) {
             0 -> JarvisResponse("\"$name\" ismli kontakt topilmadi.", intent.type, success = false)
-            1 -> JarvisResponse(launchReply(device.call(found[0]), "${found[0].name} raqamiga qo'ng'iroq qilinmoqda.", "Qo'ng'iroq"), intent.type)
+            1 -> {
+                context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.CONTACT to found[0].name))
+                JarvisResponse("${found[0].name} raqamiga qo'ng'iroq qilaymi?", intent.type, expectsReply = true)
+            }
             else -> JarvisResponse(
                 "${found.size} ta kontakt topildi: ${found.joinToString(", ") { it.name }}. Qaysi biriga qo'ng'iroq qilay?", intent.type,
                 card = ResponseCard("Kontaktlar", found.mapIndexed { i, c -> "${i + 1}. ${c.name} — ${c.phone}" }), expectsReply = true
