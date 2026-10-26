@@ -148,7 +148,14 @@ Qoidalar:
                 val k = keys.next()
                 val v = slotsJson.optString(k, "").trim()
                 if (v.isNotEmpty() && v != "null") {
-                    slotsMap[if (k == "reply") ResolvedIntent.ANSWER else k] = v
+                    val canonicalKey = when (k) {
+                        "reply" -> ResolvedIntent.ANSWER
+                        "durationMinutes" -> ResolvedIntent.DURATION
+                        "name" -> ResolvedIntent.CONTACT
+                        "fact" -> ResolvedIntent.CONTENT
+                        else -> k
+                    }
+                    slotsMap[canonicalKey] = v
                 }
             }
         }
