@@ -328,7 +328,8 @@ class WhisperSpeechToText(
         }
     }
 
-    private fun encodeWav16BitMono(samples: ShortArray, sampleRate: Int): ByteArray {
+    companion object {
+        fun wav(samples: ShortArray, sampleRate: Int): ByteArray {
         val byteDataSize = samples.size * 2
         val out = ByteArrayOutputStream(44 + byteDataSize)
         val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
@@ -353,7 +354,6 @@ class WhisperSpeechToText(
         return out.toByteArray()
     }
 
-    companion object {
         private const val SAMPLE_RATE = 16_000
         private const val SPEECH_RMS_THRESHOLD = 420.0
         private const val END_OF_SPEECH_SILENCE_MS = 1_150L
