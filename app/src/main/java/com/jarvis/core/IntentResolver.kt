@@ -15,6 +15,7 @@ enum class IntentType {
     DAY_SUMMARY,
     SEARCH_TASKS,
     ADD_REMINDER,
+    DELETE_REMINDER,
     ADD_HABIT,
     REMEMBER,
     RECALL,
@@ -149,6 +150,11 @@ class IntentResolver {
             } else hit(IntentType.CALENDAR_READ, 0.9f)
         }
 
+        // Check deletion before creation so delete commands never create a reminder.
+        if (REMINDER_RE.containsMatchIn(t) && DELETE_RE.containsMatchIn(t)) {
+            return hit(IntentType.DELETE_REMINDER, 0.98f,
+                ResolvedIntent.TITLE to titleFrom(cmd.remainder, REMINDER_RE, DELETE_RE))
+        }
         if (REMINDER_RE.containsMatchIn(t)) {
             return hit(IntentType.ADD_REMINDER, if (cmd.time != null) 0.95f else 0.8f,
                 ResolvedIntent.TITLE to titleFrom(cmd.remainder, REMINDER_RE))
