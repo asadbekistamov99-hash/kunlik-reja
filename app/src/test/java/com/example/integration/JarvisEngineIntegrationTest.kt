@@ -177,7 +177,10 @@ class JarvisEngineIntegrationTest {
     @Test fun `phone integrations`() {
         assertEquals(false, say("Jarvis kamera och").let { device.cameraOpened })
         device.contacts = listOf(ContactHit("Doktor Karimov", "+998901234567"))
-        say("Jarvis doktor bilan bog'lan")
+        val callAsk = say("Jarvis doktor bilan bog'lan")
+        assertTrue(callAsk.expectsReply)
+        assertTrue(device.calls.isEmpty())
+        say("ha")
         assertEquals("Doktor Karimov", device.calls.single().name)
         device.files = listOf(FileHit("hisobot.pdf", Uri.parse("content://a/1"), "application/pdf", 1, 2),
             FileHit("shartnoma.pdf", Uri.parse("content://a/2"), "application/pdf", 1, 1))
