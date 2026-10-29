@@ -28,6 +28,9 @@ jobs:
       - name: Accept Android licenses
         run: yes | sdkmanager --licenses >/dev/null || true
 
+      - name: Make Gradle executable
+        run: chmod +x gradlew
+
       - name: Build, test and lint
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace --no-daemon
 
