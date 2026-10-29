@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +64,7 @@ import com.example.ui.theme.SignalGreen
 import com.example.ui.theme.Titanium300
 import com.example.ui.viewmodel.JarvisViewModel
 import com.example.ui.viewmodel.TaskViewModel
+import com.jarvis.phone.TestModeController
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -78,6 +80,7 @@ fun DashboardScreen(
     val allTasks by tasksVm.allTasks.collectAsStateWithLifecycle()
     val habits by tasksVm.allHabits.collectAsStateWithLifecycle()
     val host = LocalHostActions.current
+    val androidContext = LocalContext.current
 
     val today = TaskRepository.getTodayDateString()
     val todayTasks = allTasks.filter { it.dateString == today }
@@ -179,7 +182,8 @@ fun DashboardScreen(
                 onOpenAssistant(); jarvis.submit("oxirgi qo'ng'iroqlarni ayt")
             }
             QuickChip("Test", Icons.Default.School, Modifier.weight(1f)) {
-                onOpenAssistant(); jarvis.submit("test yordamchisini yoq")
+                TestModeController.setEnabled(androidContext, true)
+                onOpenAssistant(); jarvis.submit("test rejimi yoqildi")
             }
         }
 

@@ -16,6 +16,9 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.View
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -27,11 +30,23 @@ import kotlinx.coroutines.launch
 /** Bound only after the user enables Jarvis in Android Accessibility settings. */
 class JarvisAccessibilityService : AccessibilityService(), PhoneDriver {
     private var testButton: View? = null
-    override fun onServiceConnected() { instance = this; TestOverlay.install(this) }
+    private val testModeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            if (intent?.action != TestModeController.ACTION) return
+            if (intent.getBooleanExtra("enabled", false)) TestOverlay.install(this@JarvisAccessibilityService)
+            else TestOverlay.remove(this@JarvisAccessibilityService)
+        }
+    }
+    override fun onServiceConnected() {
+        instance = this
+        registerReceiver(testModeReceiver, IntentFilter(TestModeController.ACTION), RECEIVER_NOT_EXPORTED)
+        if (TestModeController.isEnabled(this)) TestOverlay.install(this)
+    }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() { (application as? com.example.JarvisApplication)?.container?.gameController?.stop() }
     override fun onDestroy() {
         TestOverlay.remove(this)
+        runCatching { unregisterReceiver(testModeReceiver) }
         if (instance === this) instance = null
         (application as? com.example.JarvisApplication)?.container?.gameController?.stop()
         super.onDestroy()
