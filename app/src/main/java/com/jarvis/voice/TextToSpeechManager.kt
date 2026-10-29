@@ -246,6 +246,9 @@ class TextToSpeechManager(
                         return@withAudioFocus true
                     }
                 }
+                // A selected cloud voice must never silently switch to the device voice.
+                lastEngine = neural.id
+                return@withAudioFocus false
             }
             lastEngine = "device"
             speakWithDevice(prepared)

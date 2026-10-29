@@ -26,11 +26,22 @@ class PhoneCommands(private val context: Context, private val launcher: Activity
         val stem = query.removeSuffix("ga").removeSuffix("ni")
         val terms = listOf(query, stem, aliases[query], aliases[stem]).filterNotNull().filter { it.isNotBlank() }
         val installed = apps()
+        val wellKnownPackage = when {
+            query.contains("instagram") || stem.contains("instagram") -> "com.instagram.android"
+            query.contains("telegram") || stem.contains("telegram") -> "org.telegram.messenger"
+            else -> null
+        }
+        val wellKnown = wellKnownPackage?.let { pkg -> installed.singleOrNull { it.packageName == pkg } }
+        if (wellKnown != null) return launchInstalled(wellKnown)
         val exact = installed.filter { app -> app.name.equals(query, true) || app.packageName.equals(query, true) }
         val matches = exact.ifEmpty { installed.filter { app -> terms.any { app.name.contains(it, true) || app.packageName.contains(it, true) } } }
         if (matches.size != 1) return DeviceResult(if (matches.isEmpty()) "Bu ilova topilmadi: $name." else
             "Bir nechta ilova topildi. To'liq nomini ayting: ${matches.joinToString { it.name }}.", false)
         val app = matches.single()
+        return launchInstalled(app)
+    }
+
+    private suspend fun launchInstalled(app: App): DeviceResult {
         val intent = context.packageManager.getLaunchIntentForPackage(app.packageName) ?: return DeviceResult("Ilova ochilmadi.", false)
         return when (launcher.launch(intent, "${app.name} ni ochish")) {
             ActivityLauncher.Result.STARTED -> {
@@ -72,7 +83,7 @@ class PhoneCommands(private val context: Context, private val launcher: Activity
         }
         val action = when (command) {
             "orqaga qayt" -> PhoneStep(PhoneAction.BACK)
-            "bosh ekranga qayt" -> PhoneStep(PhoneAction.HOME)
+            "bosh ekranga qayt", "ilovadan chiq", "ilovani yop", "dasturdan chiq" -> PhoneStep(PhoneAction.HOME)
             "pastga sur" -> PhoneStep(PhoneAction.SCROLL_DOWN)
             "yuqoriga sur" -> PhoneStep(PhoneAction.SCROLL_UP)
             else -> {

@@ -111,7 +111,7 @@ class IntentResolver {
         val callVerb = Regex("""\b(?:telefon\s+qil|qo'ng'iroq\s+qil|bog'lan)\w*""").containsMatchIn(head)
         val callNoun = Regex("""\bqo'ng'iroq\w*""").containsMatchIn(head)
         val ordinal = Regex("""\b(\d{1,2})\s*-?\s*(?:chi\w*|si\w*)\b""").find(head)?.groupValues?.get(1)
-        val count = Regex("""\boxirgi\s+(\d{1,2})\s*(?:ta|tadan)?\b""").find(head)?.groupValues?.get(1)
+        val count = Regex("""(?:\boxirgi\s+)?(\d{1,2})\s*(?:ta|tadan|tasi|sini|siga)\b""").find(head)?.groupValues?.get(1)
         val app = when { head.contains("telegram") -> "telegram"; head.contains("instagram") -> "instagram"; else -> "" }
         val originalBody = cmd.original.substringAfter(':', "").trim()
         fun recipient(): String {
@@ -152,7 +152,7 @@ class IntentResolver {
         if (Regex("""\b(?:shaxmat|pgn|partiya\w*)\b""").containsMatchIn(t) && t.contains("tahlil")) {
             return hit(IntentType.ANALYZE_CHESS, 1f, ResolvedIntent.CONTENT to cmd.original.substringAfter(':', "").trim())
         }
-        if (t in setOf("ekranni o'qi", "orqaga qayt", "bosh ekranga qayt", "pastga sur", "yuqoriga sur") ||
+        if (t in setOf("ekranni o'qi", "orqaga qayt", "bosh ekranga qayt", "pastga sur", "yuqoriga sur", "ilovadan chiq", "ilovani yop", "dasturdan chiq") ||
             Regex("""^.+ tugmasini bos$|^matn yoz:\s*.+$""").matches(t)) {
             return hit(IntentType.CONTROL_PHONE, 1f, ResolvedIntent.CONTENT to
                 if (t.startsWith("matn yoz:")) "matn yoz: " + cmd.original.substringAfter(':').trim() else cmd.body)
