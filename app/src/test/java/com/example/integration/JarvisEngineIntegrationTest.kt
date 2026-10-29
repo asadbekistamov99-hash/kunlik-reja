@@ -178,9 +178,8 @@ class JarvisEngineIntegrationTest {
         assertEquals(false, say("Jarvis kamera och").let { device.cameraOpened })
         device.contacts = listOf(ContactHit("Doktor Karimov", "+998901234567"))
         val callAsk = say("Jarvis doktor bilan bog'lan")
-        assertTrue(callAsk.expectsReply)
-        assertTrue(device.calls.isEmpty())
-        say("ha")
+        assertTrue(callAsk.success)
+        assertFalse(callAsk.expectsReply)
         assertEquals("Doktor Karimov", device.calls.single().name)
         device.files = listOf(FileHit("hisobot.pdf", Uri.parse("content://a/1"), "application/pdf", 1, 2),
             FileHit("shartnoma.pdf", Uri.parse("content://a/2"), "application/pdf", 1, 1))
@@ -468,13 +467,11 @@ class JarvisEngineIntegrationTest {
     @Test fun `dialer and missing application never claim a completed call`() {
         device.contacts = listOf(ContactHit("Ali", "+998901234567"))
         device.launchResult = com.jarvis.integrations.ActivityLauncher.Result.DIALER
-        say("Ali bilan bog'lan")
-        val dialer = say("ha")
+        val dialer = say("Ali bilan bog'lan")
         assertFalse(dialer.success)
         assertTrue(dialer.text, dialer.text.contains("Raqam terish oynasi"))
         device.launchResult = com.jarvis.integrations.ActivityLauncher.Result.NO_APP
-        say("Ali bilan bog'lan")
-        assertFalse(say("ha").success)
+        assertFalse(say("Ali bilan bog'lan").success)
     }
 
     @Test fun `confirmed network failure is reported and next command still works`() {
@@ -679,10 +676,8 @@ class JarvisEngineIntegrationTest {
         device.callRows = (1..10).map { com.jarvis.integrations.CallRecord(it.toLong(), "Ali $it", "+9989012345${it.toString().padStart(2, '0')}", 1000L, "kiruvchi") }
         val answer = say("Oxirgi 10 ta qo'ng'iroqdan 7-siga telefon qil")
         assertEquals(IntentType.CALL_FROM_HISTORY, answer.intent)
-        assertTrue(answer.text, answer.expectsReply)
-        assertTrue(device.calls.isEmpty())
-        device.callRows = emptyList()
-        say("ha")
+        assertTrue(answer.success)
+        assertFalse(answer.expectsReply)
         assertEquals("+998901234507", device.calls.single().phone)
     }
 
@@ -694,9 +689,10 @@ class JarvisEngineIntegrationTest {
         assertFalse(say("1-siga telefon qil").success)
         assertFalse(say("7-siga telefon qil").success)
         device.callRows = emptyList()
-        assertTrue(say("2-siga telefon qil").expectsReply)
-        say("yo'q")
-        assertTrue(device.calls.isEmpty())
+        val direct = say("2-siga telefon qil")
+        assertTrue(direct.success)
+        assertFalse(direct.expectsReply)
+        assertEquals("+998901234567", device.calls.single().phone)
     }
 
     @Test fun `sms preserves dictated body and asks missing body`() {
@@ -705,13 +701,17 @@ class JarvisEngineIntegrationTest {
         assertTrue(first.text, first.expectsReply)
         val body = "Salom Ali! Ertaga 12:00 da kel."
         val draft = say(body)
+        assertTrue(draft.expectsReply)
+        assertTrue(draft.text.contains(body))
+        say("ha")
         assertEquals("+998901234567" to body, device.smsDrafts.single())
-        assertFalse(draft.success)
     }
 
     @Test fun `sms body mentioning power is treated as data`() {
         val r = say("+998901234567 ga SMS yoz: Telefonni o'chir, keyin menga yoz!")
         assertEquals(IntentType.COMPOSE_SMS, r.intent)
+        assertTrue(r.expectsReply)
+        say("ha")
         assertEquals("Telefonni o'chir, keyin menga yoz!", device.smsDrafts.single().second)
     }
 
