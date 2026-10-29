@@ -29,7 +29,18 @@ jobs:
         run: yes | sdkmanager --licenses >/dev/null || true
 
       - name: Install Android build tools
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        shell: bash
+        run: |
+          set -e
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ -n "$SDKMANAGER" ]; then
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+          else
+            echo "sdkmanager not exposed; using the runner's preinstalled Android SDK"
+          fi
 
       - name: Make Gradle executable
         run: chmod +x gradlew
