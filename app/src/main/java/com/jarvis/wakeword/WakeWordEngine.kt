@@ -126,11 +126,13 @@ object WakeWordEngineFactory {
         return when (choice) {
             WakeEngineChoice.OPEN_WAKE_WORD -> OpenWakeWordEngine(context, sensitivity)
             WakeEngineChoice.VOSK -> if (voskReady) VoskKeywordEngine(context, voskKeywordModel!!, sensitivity) else OpenWakeWordEngine(context, sensitivity)
-            WakeEngineChoice.PORCUPINE, WakeEngineChoice.AUTO -> when {
+            WakeEngineChoice.PORCUPINE -> when {
                 hasKey -> PorcupineWakeWordEngine(context, picovoiceKey!!, sensitivity)
                 voskReady -> VoskKeywordEngine(context, voskKeywordModel!!, sensitivity)
                 else -> OpenWakeWordEngine(context, sensitivity)
             }
+            // AUTO uses the bundled two-word detector so ordinary speech cannot activate Jarvis.
+            WakeEngineChoice.AUTO -> OpenWakeWordEngine(context, sensitivity)
         }
     }
 }
