@@ -142,6 +142,10 @@ class ActionExecutor(
     }
 
     private suspend fun confirmedAction(intent: ResolvedIntent): JarvisResponse = when (intent.type) {
+        IntentType.COMPOSE_SMS -> {
+            val number = intent.slot("phone") ?: return JarvisResponse("SMS raqami aniqlanmadi.", intent.type, success = false)
+            device.draftSms(number, intent.slot(ResolvedIntent.BODY).orEmpty()).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        }
         IntentType.CALL_FROM_HISTORY -> {
             val number = intent.slot("phone") ?: return JarvisResponse("Raqam aniqlanmadi.", intent.type, success = false)
             launchResponse(device.call(com.jarvis.integrations.ContactHit(intent.slot(ResolvedIntent.CONTACT) ?: number, number)),
@@ -610,8 +614,7 @@ class ActionExecutor(
         return when (found.size) {
             0 -> JarvisResponse("\"$name\" ismli kontakt topilmadi.", intent.type, success = false)
             1 -> {
-                context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.CONTACT to found[0].name))
-                JarvisResponse("${found[0].name} raqamiga qo'ng'iroq qilaymi?", intent.type, expectsReply = true)
+                launchResponse(device.call(found[0]), "${found[0].name} ga qo'ng'iroq qilinyapti.", "Qo'ng'iroq", intent.type)
             }
             else -> JarvisResponse(
                 "${found.size} ta kontakt topildi: ${found.joinToString(", ") { it.name }}. Qaysi biriga qo'ng'iroq qilay?", intent.type,
@@ -664,8 +667,7 @@ class ActionExecutor(
         val index = intent.slot("index")?.toIntOrNull()?.minus(1) ?: 0
         val call = calls.getOrNull(index) ?: return JarvisResponse("Ro'yxatda bunday raqamli qo'ng'iroq yo'q.", intent.type, success = false)
         if (!call.callable || com.jarvis.integrations.PhoneCommunications.normalizeNumber(call.number) == null) return JarvisResponse("Bu yozuvning raqami yopiq yoki noto'g'ri; qo'ng'iroq qilib bo'lmaydi.", intent.type, success = false)
-        context.pendingConfirmation = intent.copy(slots = intent.slots + mapOf("phone" to call.number, ResolvedIntent.CONTACT to call.name))
-        return JarvisResponse("${call.name}, ${call.number} raqamiga qo'ng'iroq qilaymi?", intent.type, expectsReply = true)
+        return launchResponse(device.call(com.jarvis.integrations.ContactHit(call.name, call.number)), "${call.name} ga qo'ng'iroq qilinyapti.", "Qo'ng'iroq", intent.type)
     }
 
     private fun composeSms(intent: ResolvedIntent): JarvisResponse {
@@ -693,7 +695,8 @@ class ActionExecutor(
             }
         }
         val body = intent.slot(ResolvedIntent.BODY) ?: return askFor(intent.copy(slots = intent.slots + ("phone" to number)), ResolvedIntent.BODY, "SMS matnini ayting.")
-        return device.draftSms(number, body).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        context.pendingConfirmation = intent.copy(slots = intent.slots + mapOf("phone" to number, ResolvedIntent.BODY to body))
+        return JarvisResponse("SMS matni: $body. Shu matnni tayyorlab yuboraymi?", intent.type, expectsReply = true)
     }
 
     private fun addContact(intent: ResolvedIntent): JarvisResponse {
