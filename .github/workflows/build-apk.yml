@@ -28,8 +28,14 @@ jobs:
       - name: Accept Android licenses
         run: yes | sdkmanager --licenses >/dev/null || true
 
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
       - name: Make Gradle executable
         run: chmod +x gradlew
+
+      - name: Verify Gradle environment
+        run: ./gradlew --version
 
       - name: Build, test and lint
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace --no-daemon
