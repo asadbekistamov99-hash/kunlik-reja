@@ -43,7 +43,8 @@ data class SettingsSnapshot(
     /** OpenAI TTS model id used when the OpenAI neural voice is active. */
     val openaiTtsModel: String = "gpt-4o-mini-tts",
     /** OpenAI neural voice speaking speed (0.5–2.0); 1.0 is natural. */
-    val openaiTtsSpeed: Float = 1.0f
+    val openaiTtsSpeed: Float = 1.0f,
+    val gameScreenConsent: Boolean = false
 )
 
 class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
@@ -84,6 +85,7 @@ class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
         const val VOICE_GENDER = "voice_gender"
         const val TTS_ENGINE = "tts_engine"
         const val OPENAI_TTS_MODEL = "openai_tts_model"
+        const val GAME_SCREEN_CONSENT = "game_screen_consent"
         const val OPENAI_TTS_SPEED = "openai_tts_speed"
 
         fun parse(map: Map<String, String>): SettingsSnapshot {
@@ -91,6 +93,7 @@ class JarvisSettings(private val dao: UserSettingsDao, scope: CoroutineScope) {
             fun bool(k: String, def: Boolean) = map[k]?.toBooleanStrictOrNull() ?: def
             fun float(k: String, def: Float) = map[k]?.toFloatOrNull() ?: def
             return SettingsSnapshot(
+                gameScreenConsent = bool(GAME_SCREEN_CONSENT, d.gameScreenConsent),
                 assistantEnabled = bool(ASSISTANT_ENABLED, d.assistantEnabled),
                 wakeEngine = map[WAKE_ENGINE]?.let { runCatching { WakeEngineChoice.valueOf(it) }.getOrNull() } ?: d.wakeEngine,
                 wakeSensitivity = float(WAKE_SENSITIVITY, d.wakeSensitivity).coerceIn(0.1f, 0.95f),

@@ -44,7 +44,7 @@ interface SttEvents {
 interface SpeechToText {
     val id: String
     fun isAvailable(): Boolean
-    suspend fun listen(events: SttEvents, maxMillis: Long = 10_000): String?
+    suspend fun listen(events: SttEvents, maxMillis: Long = 15_000): String?
 }
 
 /**
@@ -64,7 +64,7 @@ class AndroidSpeechToText(
 
     override suspend fun listen(events: SttEvents, maxMillis: Long): String? {
         val firstTry = listenOnce(events, maxMillis, "uz-UZ")
-        if (!firstTry.isNullOrBlank()) return SpellCorrector.correct(firstTry)
+        if (!firstTry.isNullOrBlank()) return firstTry
         return null
     }
 
@@ -78,8 +78,6 @@ class AndroidSpeechToText(
                 val sr = SpeechRecognizer.createSpeechRecognizer(context)
                 recognizer = sr
                 sr.setRecognitionListener(object : RecognitionListener {
-                    private var latestPartial: String = ""
-
                     override fun onReadyForSpeech(params: Bundle?) {
                         events.onReady()
                     }
@@ -114,7 +112,8 @@ class AndroidSpeechToText(
                             val best = pickBestUzbekCandidate(matches)
                             resultDeferred.complete(best)
                         } else {
-                            resultDeferred.complete(latestPartial.takeIf { it.isNotBlank() })
+                            // Never execute an unfinished hypothesis as a final command.
+                            resultDeferred.complete(null)
                         }
                     }
 
@@ -124,7 +123,6 @@ class AndroidSpeechToText(
                             ?.firstOrNull()
                             .orEmpty()
                         if (part.isNotBlank()) {
-                            latestPartial = part
                             events.onPartial(part)
                         }
                     }
@@ -167,23 +165,15 @@ class AndroidSpeechToText(
     }
 
     private fun pickBestUzbekCandidate(candidates: List<String>): String {
-        val commandKeywords = listOf(
-            "jarvis", "vazifa", "eslatma", "soat", "ertaga", "bugun",
-            "qo'sh", "bajarildi", "o'chir", "taqvim", "qo'ng'iroq", "odat"
-        )
-        return candidates.maxByOrNull { candidate ->
-            val corrected = SpellCorrector.correct(candidate).lowercase()
-            val keywordHits = commandKeywords.count { corrected.contains(it) }
-            keywordHits * 10 + corrected.length.coerceAtMost(40)
-        } ?: candidates.first()
+        return candidates.first()
     }
 }
 
 /**
  * Kuchaytirilgan OpenAI Whisper STT:
  * - Aparat darajasidagi NoiseSuppressor, AutomaticGainControl va AcousticEchoCanceler
- * - Avtomatik Voice Activity Detection (VAD): foydalanuvchi gapini tugatishi bilan (1.1s sukunat)
- *   darhol yozishni yakunlab serverga yuboradi
+ * - Avtomatik Voice Activity Detection (VAD): foydalanuvchi gapini tugatishi bilan (1.8s sukunat)
+ *   yozishni yakunlab serverga yuboradi
  * - Ovoz past bo'lsa avtomatik dinamik kuchaytirish (Gain Normalization)
  * - O'zbekcha maxsus prompt konteksti bilan yuqori aniqlik
  */
@@ -356,7 +346,7 @@ class WhisperSpeechToText(
 
         private const val SAMPLE_RATE = 16_000
         private const val SPEECH_RMS_THRESHOLD = 420.0
-        private const val END_OF_SPEECH_SILENCE_MS = 1_150L
+        private const val END_OF_SPEECH_SILENCE_MS = 1_800L
     }
 }
 
@@ -370,18 +360,27 @@ class SpeechToTextRouter(
     private val whisper: SpeechToText,
     private val vosk: VoskSpeechToText,
     private val choice: () -> SttEngineChoice,
-    private val online: () -> Boolean
+    private val online: () -> Boolean,
+    private val microphoneGranted: () -> Boolean
 ) : SpeechToText {
 
     override val id: String
         get() = selectChain().firstOrNull()?.id ?: "none"
 
-    override fun isAvailable(): Boolean = selectChain().isNotEmpty()
+    override fun isAvailable(): Boolean = microphoneGranted() && selectChain().isNotEmpty()
 
     override suspend fun listen(events: SttEvents, maxMillis: Long): String? {
+        if (!microphoneGranted()) throw SttException("Mikrofon ruxsatini yoqing.", recoverable = false)
         val chain = selectChain()
         for (engine in chain) {
-            val text = runCatching { engine.listen(events, maxMillis) }.getOrNull()
+            if (!microphoneGranted()) throw SttException("Mikrofon ruxsati bekor qilingan.", recoverable = false)
+            val text = try {
+                engine.listen(events, maxMillis)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
             if (!text.isNullOrBlank()) {
                 return SpellCorrector.correct(text)
             }

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.example.JarvisApplication
+import com.jarvis.alarm.AlarmPlaybackService
 import com.example.notification.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,22 +29,30 @@ class TaskReminderReceiver : BroadcastReceiver() {
                             val task = container.database.taskDao().getTaskById(intent.getIntExtra(EXTRA_TASK_ID, -1))
                             if (task != null && !task.isCompleted) {
                                 val msg = "Soat ${task.timeString} — ${task.description.ifBlank { "vazifa vaqti yaqinlashdi" }}"
-                                NotificationHelper.showNotification(context, "⏰ ${task.title}", msg, task.id, taskId = task.id)
-                                container.announce("Eslatma: ${task.title}. Belgilangan vaqt: ${task.dateString}, soat ${task.timeString}.")
+                                AlarmPlaybackService.ring(context, task.id, task.title, msg, taskId = task.id)
                             }
                         }
                         ACTION_REMINDER_ALARM -> {
                             val reminder = container.reminderEngine.onReminderFired(intent.getLongExtra(EXTRA_REMINDER_ID, -1))
                             if (reminder != null) {
-                                NotificationHelper.showNotification(
-                                    context, "⏰ ${reminder.title}", reminder.message.ifBlank { "Jarvis eslatmasi" },
-                                    100_000 + reminder.id.toInt()
-                                )
                                 val exactTime = DateTimeFormatter.ofPattern("dd MMMM, HH:mm").format(Instant.ofEpochMilli(reminder.triggerAtMillis).atZone(ZoneId.systemDefault()))
-                                container.announce("Eslatma: ${reminder.title}. Belgilangan vaqt: $exactTime. ${reminder.message}")
+                                AlarmPlaybackService.ring(context, 100_000 + reminder.id.toInt(), reminder.title,
+                                    "Belgilangan vaqt: $exactTime. ${reminder.message}")
+                            }
+                        }
+                        ACTION_ALARM_DISMISS, ACTION_ALARM_SNOOZE -> {
+                            val id = intent.getIntExtra(AlarmPlaybackService.EXTRA_ID, 0)
+                            AlarmPlaybackService.stop(context, id)
+                            if (intent.action == ACTION_ALARM_SNOOZE) {
+                                container.reminderEngine.snooze(
+                                    intent.getStringExtra(AlarmPlaybackService.EXTRA_TITLE) ?: "Eslatma",
+                                    "5 daqiqaga qoldirilgan eslatma")
                             }
                         }
                         ACTION_MARK_COMPLETED -> {
+                            if (intent.hasExtra(AlarmPlaybackService.EXTRA_ID)) {
+                                AlarmPlaybackService.stop(context, intent.getIntExtra(AlarmPlaybackService.EXTRA_ID, 0))
+                            }
                             val task = container.database.taskDao().getTaskById(intent.getIntExtra(EXTRA_TASK_ID, -1))
                             if (task != null) container.taskRepository.updateTask(task.copy(isCompleted = true))
                             NotificationHelper.cancel(context, intent.getIntExtra(EXTRA_NOTIFICATION_ID, task?.id ?: 0))
@@ -57,6 +66,8 @@ class TaskReminderReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        const val ACTION_ALARM_DISMISS = "com.jarvis.ALARM_DISMISS"
+        const val ACTION_ALARM_SNOOZE = "com.jarvis.ALARM_SNOOZE"
         const val ACTION_TASK_ALARM = "com.jarvis.ACTION_TASK_ALARM"
         const val ACTION_REMINDER_ALARM = "com.jarvis.ACTION_REMINDER_ALARM"
         const val ACTION_MARK_COMPLETED = "com.jarvis.ACTION_MARK_COMPLETED"

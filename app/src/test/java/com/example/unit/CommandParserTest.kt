@@ -86,4 +86,32 @@ class CommandParserTest {
         assertEquals(LocalTime.of(9, 0), parser.parse("ertaga ertalab yugurish").time)
         assertEquals(LocalTime.of(19, 0), parser.parse("kechqurun kitob o'qish").time)
     }
+    @Test fun `spoken hours and minutes include inflected number words`() {
+        assertEquals(LocalTime.of(9, 30), parser.parse("ertaga soat to'qqiz o'ttizda eslat").time)
+        assertEquals(LocalTime.of(18, 45), parser.parse("soat o'n sakkiz qirq beshda eslat").time)
+        assertEquals(LocalTime.of(21, 15), parser.parse("kechqurun soat to'qqiz o'n beshda eslat").time)
+        assertEquals(LocalTime.of(9, 30), parser.parse("эртага соат тўққиз ўттизда эслат").time)
+    }
+
+    @Test fun `compound relative offset preserves seconds across midnight`() {
+        val late = LocalDateTime.of(2026, 9, 23, 23, 45, 37)
+        val p = CommandParser { late }.parse("bir soat o'ttiz daqiqadan keyin eslat")
+        assertEquals(late.plusMinutes(90), p.relativeTarget)
+        assertEquals(LocalDate.of(2026, 9, 24), p.date)
+        assertEquals(LocalTime.of(1, 15), p.time)
+        assertTrue(p.isRelative)
+        assertFalse(p.needsTimeClarification)
+        assertEquals(late.plusMinutes(1), CommandParser { late }.parse("bir daqiqadan keyin eslat").relativeTarget)
+    }
+
+    @Test fun `imprecise invalid and ambiguous reminder times need clarification`() {
+        for (phrase in listOf("ertalab eslat", "soat 3 da eslat", "soat 25 da eslat", "soat 9:75 da eslat",
+            "0 daqiqadan keyin eslat", "2026-02-30 soat 18 da eslat")) {
+            assertTrue(phrase, parser.parse(phrase).needsTimeClarification)
+        }
+        assertFalse(parser.parse("ertalab soat 3 da eslat").needsTimeClarification)
+        assertFalse(parser.parse("soat 03:00 da eslat").needsTimeClarification)
+        assertEquals(LocalDate.of(2026, 10, 30), parser.parse("2026-10-30 soat 18 da eslat").date)
+    }
+
 }

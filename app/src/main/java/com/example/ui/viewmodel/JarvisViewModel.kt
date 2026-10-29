@@ -32,6 +32,21 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 class JarvisViewModel(private val container: AppContainer) : ViewModel() {
+    val gameStatus = container.gameController.status
+    fun stopGame() = container.gameController.stop()
+    private val _chessAnalysis = MutableStateFlow("")
+    val chessAnalysis = _chessAnalysis.asStateFlow()
+    private val _analyzingChess = MutableStateFlow(false)
+    val analyzingChess = _analyzingChess.asStateFlow()
+    fun analyzeChess(pgn: String) {
+        if (_analyzingChess.value) return
+        _analyzingChess.value = true
+        viewModelScope.launch {
+            try { _chessAnalysis.value = container.analyzeChess(pgn).text }
+            finally { _analyzingChess.value = false }
+        }
+    }
+
 
     val voice: StateFlow<VoiceUiState> = container.voice.state
     val settings: StateFlow<SettingsSnapshot> = container.settings.state

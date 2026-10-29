@@ -32,7 +32,7 @@ import com.example.data.UserSettingsDao
         ConversationMessage::class,
         UserSetting::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class MemoryDatabase : RoomDatabase() {

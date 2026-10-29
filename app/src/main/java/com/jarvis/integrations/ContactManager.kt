@@ -55,6 +55,7 @@ class ContactManager(private val context: Context, private val launcher: Activit
     fun call(contact: ContactHit): ActivityLauncher.Result {
         val direct = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
         val intent = Intent(if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(contact.phone)}"))
-        return launcher.launch(intent, "${contact.name} bilan bog'lanish")
+        val result = launcher.launch(intent, "${contact.name} bilan bog'lanish")
+        return if (!direct && result == ActivityLauncher.Result.STARTED) ActivityLauncher.Result.DIALER else result
     }
 }

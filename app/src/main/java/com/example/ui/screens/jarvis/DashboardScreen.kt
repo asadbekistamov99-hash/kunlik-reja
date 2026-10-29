@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -171,6 +173,14 @@ fun DashboardScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             QuickChip("Kun xulosasi", Icons.Default.AutoAwesome, Modifier.weight(1f)) { onOpenAssistant(); jarvis.submit("bugungi rejam") }
             QuickChip("Kamera", Icons.Default.CameraAlt, Modifier.weight(1f)) { jarvis.submit("kamera och") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            QuickChip("Qo'ng'iroqlar", Icons.Default.Call, Modifier.weight(1f)) {
+                onOpenAssistant(); jarvis.submit("oxirgi qo'ng'iroqlarni ayt")
+            }
+            QuickChip("Test", Icons.Default.School, Modifier.weight(1f)) {
+                onOpenAssistant(); jarvis.submit("test yordamchisini yoq")
+            }
         }
 
         if (voice.lastReply.isNotBlank()) {

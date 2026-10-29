@@ -77,6 +77,12 @@ fun SettingsScreen(vm: JarvisViewModel) {
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { permissionTick++ }
     }
+    var chessPgn by remember { mutableStateOf("") }
+    val chessAnalysis by vm.chessAnalysis.collectAsStateWithLifecycle()
+    val analyzingChess by vm.analyzingChess.collectAsStateWithLifecycle()
+    var phoneConsent by remember { mutableStateOf(false) }
+    var gameConsent by remember { mutableStateOf(false) }
+    val gameStatus by vm.gameStatus.collectAsStateWithLifecycle()
     var backupDialog by remember { mutableStateOf<Boolean?>(null) } // true = export, false = import
 
     Column(
@@ -149,6 +155,7 @@ fun SettingsScreen(vm: JarvisViewModel) {
         GlassCard(Modifier.fillMaxWidth()) {
             SectionTitle("Sun'iy intellekt")
             ChoiceRow(listOf(AiMode.HYBRID to "Gibrid", AiMode.OFFLINE_ONLY to "Faqat oflayn", AiMode.CLOUD_FIRST to "Bulut birinchi"), s.aiMode) {
+                if (it == AiMode.OFFLINE_ONLY) vm.stopGame()
                 vm.set(JarvisSettings.AI_MODE, it.name)
             }
             Text("Kalitlar Android Keystore bilan shifrlanib saqlanadi va hech qayerga yuborilmaydi (faqat tegishli API'ga).",
@@ -169,6 +176,34 @@ fun SettingsScreen(vm: JarvisViewModel) {
         }
 
         GlassCard(Modifier.fillMaxWidth()) {
+            SectionTitle("Telefonni boshqarish")
+            Text("Jarvis siz aytgan ilovani ochadi, ekran matnini o'qiydi va tugmalarni bosadi. " +
+                "Android Accessibility ruxsatini o'zingiz yoqasiz va istalgan payt o'chirishingiz mumkin.", color = Titanium300, fontSize = 13.sp)
+            OutlinedButton(onClick = { phoneConsent = true }, modifier = Modifier.testTag("button_phone_control")) {
+                Text("Telefon boshqaruvi ruxsati")
+            }
+            ToggleRow("AI bilan shaxmat / puzzle", "Ochiq o'yin ekrani Gemini xizmatiga yuboriladi. Internet va Gemini kaliti kerak.", s.gameScreenConsent) {
+                if (it) gameConsent = true else { vm.stopGame(); vm.set(JarvisSettings.GAME_SCREEN_CONSENT, false) }
+            }
+            Text("Buyruqlar: Telegram ilovasini och; ekranni o'qi; Play tugmasini bos; pastga sur; shu o'yinni o'yna. " +
+                "Stop Jarvis agentni to'xtatadi. AI o'yin vazifasi 12 qadam yoki 2 daqiqagacha ishlaydi.", color = Titanium300, fontSize = 12.sp)
+            Text(gameStatus, color = ArcCyan, fontSize = 13.sp)
+            TextButton(onClick = { vm.stopGame() }) { Text("O'yin agentini to'xtatish") }
+        }
+
+        GlassCard(Modifier.fillMaxWidth()) {
+            SectionTitle("Shaxmat mashqi")
+            Text("Chess yoki Lichess'da puzzle yoki kompyuterga qarshi rejimni oching. Buyruq: 'shaxmat puzzle yech' yoki 'bot bilan shaxmat o'yna'.", color = Titanium300, fontSize = 13.sp)
+            Text("Tugagan partiyani tahlil qilish uchun PGN yozuvini kiriting. Tahlil tugmasi shu yozuvni Gemini'ga yuboradi. Ekran ruxsati talab qilinmaydi.", color = Titanium300, fontSize = 12.sp)
+            OutlinedTextField(chessPgn, { chessPgn = it }, label = { Text("Tugagan partiya PGN yozuvi") },
+                modifier = Modifier.fillMaxWidth().testTag("chess_pgn"), minLines = 3, maxLines = 8)
+            Button(onClick = { vm.analyzeChess(chessPgn) }, enabled = chessPgn.isNotBlank() && !analyzingChess) {
+                Text(if (analyzingChess) "Tahlil qilinmoqda..." else "PGN tahlili")
+            }
+            if (chessAnalysis.isNotBlank()) Text(chessAnalysis, color = MaterialTheme.colorScheme.onSurface)
+        }
+
+        GlassCard(Modifier.fillMaxWidth()) {
             SectionTitle("Ruxsatlar")
             JarvisCapability.entries.forEach { cap ->
                 val granted = remember(permissionTick, cap) { permissions.isGranted(cap) }
@@ -179,7 +214,7 @@ fun SettingsScreen(vm: JarvisViewModel) {
                         Text(cap.titleUz, color = MaterialTheme.colorScheme.onSurface)
                         Text(cap.reasonUz, color = Titanium300, fontSize = 12.sp)
                     }
-                    if (!granted) TextButton(onClick = { host.requestCapability(cap) }) { Text("Berish") }
+                    if (!granted) TextButton(onClick = { if (cap == JarvisCapability.PHONE_CONTROL) phoneConsent = true else host.requestCapability(cap) }) { Text("Berish") }
                 }
             }
             TextButton(onClick = { host.openAppSettings() }) { Text("Ilova sozlamalarini ochish") }
@@ -230,6 +265,23 @@ fun SettingsScreen(vm: JarvisViewModel) {
         Text("Jarvis Ultra ${BuildConfig.VERSION_NAME}", color = Titanium300, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(24.dp))
     }
+
+    if (phoneConsent) AlertDialog(
+        onDismissRequest = { phoneConsent = false },
+        title = { Text("Telefonni boshqarishga ruxsat") },
+        text = { Text("Bu ruxsat Jarvis'ga boshqa ilovalarning ekran matnini ko'rish va buyruqlaringiz bo'yicha tugmalarni bosish imkonini beradi. " +
+            "Keyingi Android oynasida Jarvis xizmatini o'zingiz yoqing. Ruxsatni shu yerdan qaytarib olish mumkin.") },
+        confirmButton = { TextButton(onClick = { phoneConsent = false; host.requestCapability(JarvisCapability.PHONE_CONTROL) }) { Text("Sozlamalarni ochish") } },
+        dismissButton = { TextButton(onClick = { phoneConsent = false }) { Text("Bekor") } }
+    )
+    if (gameConsent) AlertDialog(
+        onDismissRequest = { gameConsent = false },
+        title = { Text("O'yin ekranini AI bilan tahlil qilish") },
+        text = { Text("Faqat o'yinni o'ynash buyrug'ini berganingizda, joriy o'yin ekrani va undagi matn Gemini'ga yuboriladi. " +
+            "Agent tugmalarni bosishi va yurishlar qilishi mumkin. Natijalar xato bo'lishi mumkin. Stop Jarvis bilan to'xtating.") },
+        confirmButton = { TextButton(onClick = { gameConsent = false; vm.set(JarvisSettings.GAME_SCREEN_CONSENT, true) }) { Text("Roziman") } },
+        dismissButton = { TextButton(onClick = { gameConsent = false }) { Text("Bekor") } }
+    )
 
     backupDialog?.let { export ->
         PasswordDialog(

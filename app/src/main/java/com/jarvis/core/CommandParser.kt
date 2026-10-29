@@ -23,7 +23,11 @@ data class ParsedCommand(
     /** Due date from phrases like "jumagacha" / "muddati 25 sentabr". */
     val deadline: LocalDate? = null,
     /** [body] with date/time/duration phrases removed — the raw material for titles. */
-    val remainder: String = body
+    val remainder: String = body,
+    /** A reminder must ask rather than invent a precise time. */
+    val needsTimeClarification: Boolean = false,
+    /** Relative offsets retain seconds, so "one minute" really means sixty seconds. */
+    val relativeTarget: LocalDateTime? = null
 )
 
 /**
@@ -36,20 +40,34 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
         val normalized = normalize(text)
         val (body, hasWake) = stripWakeWord(normalized)
         val now = clock()
-        var working = body
+        var working = SPOKEN_CLOCK_RE.replace(body) { m ->
+            "soat ${m.groupValues[1]}:${m.groupValues[2].padStart(2, '0')}"
+        }
         var date: LocalDate? = null
         var time: LocalTime? = null
         var duration: Int? = null
         var relative = false
+        var relativeTarget: LocalDateTime? = null
+        var needsTimeClarification = ISO_DATE_RE.find(body)?.let { m ->
+            runCatching { LocalDate.of(m.groupValues[1].toInt(), m.groupValues[2].toInt(), m.groupValues[3].toInt()) }.isFailure
+        } ?: false
 
         // 1. Relative offsets: "30 daqiqadan keyin", "2 soatdan so'ng", "yarim soatdan keyin"
-        RELATIVE_RE.find(working)?.let { m ->
-            val amount = if (m.groupValues[1] == "yarim") 30 else m.groupValues[1].toInt()
-            val minutes = if (m.groupValues[2].startsWith("soat") && m.groupValues[1] != "yarim") amount * 60 else amount
-            val target = now.plusMinutes(minutes.toLong())
+        val compoundRelative = COMPOUND_RELATIVE_RE.find(working)
+        val relativeMatch = compoundRelative ?: RELATIVE_RE.find(working)
+        relativeMatch?.let { m ->
+            val minutes = if (compoundRelative != null) {
+                m.groupValues[1].toLong() * 60 + m.groupValues[2].toLong()
+            } else {
+                val amount = if (m.groupValues[1] == "yarim") 30L else m.groupValues[1].toLong()
+                if (m.groupValues[2].startsWith("soat") && m.groupValues[1] != "yarim") amount * 60 else amount
+            }
+            val target = now.plusMinutes(minutes)
             date = target.toLocalDate()
             time = target.toLocalTime().withSecond(0).withNano(0)
+            relativeTarget = target
             relative = true
+            needsTimeClarification = minutes <= 0
             working = working.removeRange(m.range)
         }
 
@@ -85,6 +103,10 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
             }
         }
 
+        if (date == null && (ISO_DATE_RE.containsMatchIn(working) || MONTH_DATE_RE.containsMatchIn(working))) {
+            needsTimeClarification = true
+        }
+
         // 5. Times
         var period: String? = null
         PERIOD_RE.find(working)?.let { m ->
@@ -92,13 +114,17 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
             working = working.removeRange(m.range)
         }
         if (time == null) {
-            val clockMatch = CLOCK_RE.find(working) ?: SOAT_DOT_RE.find(working)
+            val correcting = Regex("""\b(?:o'zgartir|ko'chir|to'g'rila)\w*""").containsMatchIn(body)
+            val clockMatch = if (correcting) (CLOCK_RE.findAll(working) + SOAT_DOT_RE.findAll(working))
+                .maxByOrNull { it.range.first } else CLOCK_RE.find(working) ?: SOAT_DOT_RE.find(working)
             if (clockMatch != null) {
                 val h = clockMatch.groupValues[1].toInt()
                 val min = clockMatch.groupValues[2].toInt()
                 if (h in 0..23 && min in 0..59) {
                     time = LocalTime.of(adjustHour(h, period, explicitMinutes = true), min)
                     working = working.removeRange(clockMatch.range)
+                } else {
+                    needsTimeClarification = true
                 }
             }
         }
@@ -107,14 +133,18 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
             if (m != null) {
                 val h = m.groupValues[1].toInt()
                 if (h in 0..23) {
+                    if (period == null && h in 1..6) needsTimeClarification = true
                     val half = m.groupValues.getOrNull(2)?.contains("yarim") == true
                     time = LocalTime.of(adjustHour(h, period, explicitMinutes = false), if (half) 30 else 0)
                     working = working.removeRange(m.range)
+                } else {
+                    needsTimeClarification = true
                 }
             }
         }
         if (time == null && period != null) {
             time = DEFAULT_PERIOD_TIME[period]
+            needsTimeClarification = true
         }
 
         return ParsedCommand(
@@ -127,7 +157,9 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
             durationMinutes = duration,
             isRelative = relative,
             deadline = deadline,
-            remainder = working.replace(SPACES, " ").trim()
+            remainder = working.replace(SPACES, " ").trim(),
+            needsTimeClarification = needsTimeClarification,
+            relativeTarget = relativeTarget
         )
     }
 
@@ -233,7 +265,8 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
         }
 
         private fun wordsToNumbers(text: String): String {
-            val tokens = text.split(' ')
+            val suffixes = Regex("""\b(${NUMBER_WORDS.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }})(da|ga|dan|larda)\b""")
+            val tokens = suffixes.replace(text) { "${it.groupValues[1]} ${it.groupValues[2]}" }.split(' ')
             val out = ArrayList<String>(tokens.size)
             var i = 0
             while (i < tokens.size) {
@@ -280,8 +313,10 @@ class CommandParser(private val clock: () -> LocalDateTime = { LocalDateTime.now
             "kechki" to LocalTime.of(19, 0), "kech" to LocalTime.of(19, 0), "kechasi" to LocalTime.of(22, 0)
         )
 
+        private val SPOKEN_CLOCK_RE = Regex("""\bsoat\s+(\d{1,2})\s+(\d{1,2})(?:\s*(?:daqiqa|minut))?(?:\s*(?:da|ga))?\b""")
+        private val COMPOUND_RELATIVE_RE = Regex("""\b(\d{1,3})\s*soat\s+(\d{1,3})\s*(?:daqiqa|minut)(?:dan)?\s+(?:keyin|so'ng|o'tib)\b""")
         private val RELATIVE_RE = Regex("""\b(\d{1,3}|yarim)\s*(daqiqa|minut|soat)(?:dan|lardan)?\s+(?:keyin|so'ng|o'tib)\b""")
-        private val DURATION_RE = Regex("""\b(\d{1,3}|yarim)\s*(daqiqa|minut|soat)(?:lik|ga)?\b(?!\s*(?:da|dan)\b)""")
+        private val DURATION_RE = Regex("""(?<![\d:./-])\b(\d{1,3}|yarim)\s*(daqiqa|minut|soat)(?:lik|ga)?\b(?!\s*(?:da|dan)\b)""")
         private val DEADLINE_RE = Regex("""(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\s-]*[a-z']+|[a-z']+)(?:\s+kuni)?gacha\b|\bmuddati\s+((?:\d{1,2}\s+)?[a-z0-9'-]+)""")
         private val ISO_DATE_RE = Regex("""\b(\d{4})-(\d{1,2})-(\d{1,2})\b""")
         private val MONTH_DATE_RE = Regex("""\b(\d{1,2})[\s-]*(?:chi\s+|-chi\s+)?(yanvar|fevral|mart|aprel|may|iyun|iyul|avgust|sentabr|oktabr|noyabr|dekabr)\w*""")

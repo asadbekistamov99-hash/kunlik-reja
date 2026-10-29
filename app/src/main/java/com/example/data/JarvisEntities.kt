@@ -16,7 +16,9 @@ data class Reminder(
     /** 0 = one-shot, otherwise the repeat interval in minutes (1440 = daily). */
     val repeatIntervalMinutes: Int = 0,
     val isActive: Boolean = true,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val firstTriggerAtMillis: Long = triggerAtMillis
 )
 
 enum class MemoryType { PREFERENCE, HABIT, FACT, IMPORTANT, PROFILE, PATTERN, COMMAND }

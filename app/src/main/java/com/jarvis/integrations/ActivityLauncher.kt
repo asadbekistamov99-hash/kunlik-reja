@@ -16,7 +16,7 @@ import com.example.notification.NotificationHelper
  */
 class ActivityLauncher(private val context: Context) {
 
-    enum class Result { STARTED, NOTIFIED, NO_APP }
+    enum class Result { STARTED, NOTIFIED, NO_APP, DIALER }
 
     fun isAppVisible(): Boolean =
         ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
@@ -26,7 +26,7 @@ class ActivityLauncher(private val context: Context) {
         if (intent.resolveActivity(context.packageManager) == null && intent.action != Intent.ACTION_CALL) {
             return Result.NO_APP
         }
-        if (isAppVisible() || Settings.canDrawOverlays(context)) {
+        if (isAppVisible() || Settings.canDrawOverlays(context) || com.jarvis.phone.JarvisAccessibilityService.instance != null) {
             try {
                 context.startActivity(intent)
                 return Result.STARTED

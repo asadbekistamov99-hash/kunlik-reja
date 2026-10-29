@@ -76,6 +76,14 @@ class GoogleApisTest {
         assertEquals("/cal/calendars/primary/events/ev1", del.path)
     }
 
+    @Test fun `gmail malformed success without message id is not a confirmed send or draft`() = runBlocking {
+        val gmail = GmailManager(api(), server.url("/gm").toString().trimEnd('/'))
+        server.enqueue(MockResponse().setBody("{}"))
+        assertTrue(runCatching { gmail.send("ali@example.com", "Salom", "Matn") }.exceptionOrNull() is java.io.IOException)
+        server.enqueue(MockResponse().setBody("""{"id":""}"""))
+        assertTrue(runCatching { gmail.createDraft("ali@example.com", "Salom", "Matn") }.exceptionOrNull() is java.io.IOException)
+    }
+
     @Test fun `gmail unread draft and send`() = runBlocking {
         val gmail = GmailManager(api(), server.url("/gm").toString().trimEnd('/'))
         server.enqueue(MockResponse().setBody("""{"messages":[{"id":"m1"}]}"""))

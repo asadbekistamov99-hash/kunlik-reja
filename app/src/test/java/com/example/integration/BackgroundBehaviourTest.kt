@@ -89,7 +89,9 @@ class BackgroundBehaviourTest {
         waitUntil { shadowOf(nm).allNotifications.isNotEmpty() }
         val n = shadowOf(nm).allNotifications.single()
         assertTrue(shadowOf(n).contentTitle.toString().contains("Suv ichish"))
-        assertEquals("Bajarildi", n.actions.single().title)
+        assertEquals(setOf("O'tkazib yuborish", "Pauza · 5 daqiqa", "Bajarildi"), n.actions.map { it.title.toString() }.toSet())
+        assertEquals(android.app.Notification.CATEGORY_ALARM, n.category)
+        assertNotNull(n.fullScreenIntent)
         // Completing the task cancels its alarm.
         container.taskRepository.updateTask(t.copy(isCompleted = true))
         assertTrue(alarms.scheduledAlarms.isEmpty())

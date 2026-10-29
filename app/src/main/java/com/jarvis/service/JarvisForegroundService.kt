@@ -101,9 +101,13 @@ class JarvisForegroundService : LifecycleService(), WakeController {
             }
             ACTION_TOGGLE_PAUSE -> {
                 userPaused = !userPaused
+                if (userPaused) container.voice.cancel()
                 applyDetectionState()
             }
-            ACTION_LISTEN -> container.voice.startListening()
+            ACTION_LISTEN -> {
+                userPaused = false
+                container.voice.startListening()
+            }
         }
         return START_STICKY
     }
@@ -142,6 +146,16 @@ class JarvisForegroundService : LifecycleService(), WakeController {
 
     override fun resumeDetection() = applyDetectionState()
 
+    override fun pauseMicrophone() {
+        userPaused = true
+        applyDetectionState()
+    }
+
+    override fun resumeMicrophone() {
+        userPaused = false
+        applyDetectionState()
+    }
+
     // ---- internals ----
 
     private fun startInForeground(): Boolean = try {
@@ -170,6 +184,7 @@ class JarvisForegroundService : LifecycleService(), WakeController {
         val saver = s.pauseInBatterySaver && pm?.isPowerSaveMode == true
         val screenOff = !s.listenWhenLocked && pm?.isInteractive == false
         systemPaused = saver || screenOff
+        if (systemPaused) container.voice.cancel()
         applyDetectionState()
     }
 

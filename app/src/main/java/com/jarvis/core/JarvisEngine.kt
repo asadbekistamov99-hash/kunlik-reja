@@ -33,15 +33,20 @@ class JarvisEngine(
 ) {
     private val lock = Mutex()
 
+    fun beginSession() { context.sessionActive = true }
+    fun endSession() { executor.stopPhoneControl(); context.sessionActive = false; context.clear() }
+
     val isSessionActive: Boolean get() = context.sessionActive
 
-    suspend fun handle(text: String): JarvisResponse = lock.withLock {
+    suspend fun handle(text: String, alternatives: List<String> = emptyList()): JarvisResponse = lock.withLock {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return@withLock JarvisResponse("", IntentType.UNKNOWN, success = false)
         val parsed = parser.parse(trimmed)
         history.addUser(trimmed)
 
-        val response = followUp(parsed) ?: run {
+        val control = resolver.resolve(parsed)
+        val response = if (control.type == IntentType.STOP_SESSION) executor.execute(control, parsed)
+        else clarifySpeechTime(parsed, alternatives) ?: followUp(parsed) ?: run {
             val (intent, understood) = decide(parsed)
             executor.execute(intent, understood)
         }
@@ -50,14 +55,32 @@ class JarvisEngine(
         response
     }
 
+    /** Recognition variants with different absolute times must not silently schedule an alarm. */
+    private fun clarifySpeechTime(parsed: ParsedCommand, alternatives: List<String>): JarvisResponse? {
+        if (alternatives.size < 2 || parsed.isRelative || parsed.time == null || context.pendingConfirmation != null) return null
+        val pending = context.pendingIntent
+        if (pending != null && context.awaitingSlot != ResolvedIntent.TIME) return null
+        val intent = pending ?: resolver.resolve(parsed)
+        if (intent.type !in setOf(IntentType.ADD_REMINDER, IntentType.RESCHEDULE_REMINDER, IntentType.ADD_TASK, IntentType.RESCHEDULE_TASK)) return null
+        val fallbackDate = intent.slot(ResolvedIntent.DATE)?.let { java.time.LocalDate.parse(it) } ?: clock().toLocalDate()
+        val times = (alternatives + parsed.original).map(parser::parse)
+            .filter { !it.isRelative && it.time != null && !it.needsTimeClarification }
+            .map { (it.date ?: fallbackDate) to it.time }.distinct()
+        if (times.size < 2) return null
+        context.pendingIntent = intent.copy(slots = intent.slots - ResolvedIntent.TIME)
+        context.awaitingSlot = ResolvedIntent.TIME
+        return JarvisResponse("Vaqtni turlicha eshitdim. Aniq sana va soatni qayta ayting.", intent.type,
+            success = false, expectsReply = true)
+    }
+
     /** Handles answers to Jarvis' own questions: confirmations, missing slots and list selections. */
     private suspend fun followUp(parsed: ParsedCommand): JarvisResponse? {
         val body = parsed.body
         context.pendingConfirmation?.let { pending ->
             context.pendingConfirmation = null
             return when {
-                YES_RE.containsMatchIn(body) -> executor.executeConfirmed(pending)
                 NO_RE.containsMatchIn(body) -> JarvisResponse("Bekor qilindi.", pending.type)
+                YES_RE.matches(body) -> executor.executeConfirmed(pending)
                 else -> null // unrelated new command: drop the confirmation and continue
             }
         }
@@ -71,20 +94,40 @@ class JarvisEngine(
             // A clearly different command wins over filling the slot.
             if (fresh.type != IntentType.UNKNOWN && fresh.confidence >= CONFIDENT && fresh.type != pendingIntent.type &&
                 slot != ResolvedIntent.BODY && slot != ResolvedIntent.CONTENT) return null
+            val answer = if (slot == ResolvedIntent.TIME && parsed.body.matches(Regex("""\d{1,2}"""))) {
+                parser.parse("soat ${parsed.body}")
+            } else parsed
+            val extra = mutableMapOf<String, String>()
+            answer.date?.let { extra[ResolvedIntent.DATE] = it.toString() }
+            if (slot == ResolvedIntent.TIME && (answer.time == null || answer.needsTimeClarification)) {
+                return executor.execute(pendingIntent.copy(slots = (pendingIntent.slots - ResolvedIntent.TIME) + extra), answer)
+            }
             val value = when (slot) {
-                ResolvedIntent.TIME -> parsed.time?.let { "%02d:%02d".format(it.hour, it.minute) }
+                ResolvedIntent.TIME -> answer.time?.let { "%02d:%02d".format(it.hour, it.minute) }
                 ResolvedIntent.TITLE -> context.referencedIndex(body)?.let { index ->
                     if (index < 0) context.lastReminders.lastOrNull()?.title
                     else context.lastReminders.getOrNull(index)?.title
                 } ?: parsed.body.replaceFirstChar { it.uppercase() }
+                "phone" -> if (pendingIntent.type == IntentType.COMPOSE_SMS) context.callIndex(body)?.let {
+                    context.lastContacts.getOrNull(it)?.phone
+                } ?: parsed.original.trim() else parsed.original.trim()
+                "index" -> context.callIndex(body)?.plus(1)?.toString()
+                "app" -> parsed.body.lowercase()
+                ResolvedIntent.TO -> parsed.body.let {
+                    if (pendingIntent.type == IntentType.COMPOSE_SMS && parsed.original.any { c -> c.isDigit() }) parsed.original.trim() else it.replaceFirstChar { c -> c.uppercase() }
+                }
                 ResolvedIntent.BODY, ResolvedIntent.CONTENT -> parsed.original.trim()
                 else -> parsed.body.replaceFirstChar { it.uppercase() }
             } ?: return null
-            val extra = mutableMapOf(slot to value)
-            parsed.date?.let { if (pendingIntent.slot(ResolvedIntent.DATE) == null) extra[ResolvedIntent.DATE] = it.toString() }
-            return executor.execute(pendingIntent.copy(slots = pendingIntent.slots + extra), parsed)
+            extra[slot] = value
+            return executor.execute(pendingIntent.copy(slots = pendingIntent.slots + extra), answer)
         }
         val lastIntent = context.lastIntent
+        if (lastIntent == IntentType.READ_CALL_HISTORY && context.callIndex(body) != null && !context.isStale() &&
+            resolver.resolve(parsed).type in setOf(IntentType.UNKNOWN, IntentType.CALL_FROM_HISTORY)) {
+            return executor.execute(ResolvedIntent(IntentType.CALL_FROM_HISTORY, 1f,
+                mapOf("index" to (context.callIndex(body)!! + 1).toString())), parsed)
+        }
         if (lastIntent == IntentType.FIND_FILE || lastIntent == IntentType.CALL_CONTACT) {
             val idx = context.referencedIndex(body)
             if (idx != null && !context.isStale()) {
@@ -123,7 +166,9 @@ class JarvisEngine(
 
     private suspend fun decide(parsed: ParsedCommand): Pair<ResolvedIntent, ParsedCommand> {
         val (offline, understood) = understand(parsed)
-        if (offline.type in LOCAL_ONLY) return offline to understood
+        if (offline.type in LOCAL_ONLY || offline.type == IntentType.RESCHEDULE_REMINDER && offline.confidence >= CONFIDENT) {
+            return offline to understood
+        }
         val mode = settings().aiMode
         val agentReady = agent != null && mode != AiMode.OFFLINE_ONLY && agent.isAvailable()
         if (!agentReady) return offline to understood
@@ -133,7 +178,14 @@ class JarvisEngine(
         return when {
             decided == null -> offline to understood
             // Keep the deterministic parse for dates/times the model may have left out.
-            else -> decided.copy(slots = offline.slots.filterKeys { it == ResolvedIntent.DATE || it == ResolvedIntent.TIME } + decided.slots) to understood
+            else -> {
+                val slots = if (decided.type in setOf(IntentType.ADD_REMINDER, IntentType.RESCHEDULE_REMINDER)) {
+                    decided.slots - ResolvedIntent.DATE - ResolvedIntent.TIME - "relativeAt"
+                } else decided.slots
+                decided.copy(slots = slots + offline.slots.filterKeys {
+                    it == ResolvedIntent.DATE || it == ResolvedIntent.TIME || it == "repeatDaily"
+                }) to understood
+            }
         }
     }
 
@@ -148,8 +200,9 @@ class JarvisEngine(
 
     companion object {
         const val CONFIDENT = 0.75f
-        private val LOCAL_ONLY = setOf(IntentType.WAKE, IntentType.START_SESSION, IntentType.STOP_SESSION, IntentType.TIME_QUERY)
-        private val YES_RE = Regex("""\b(ha|xa|albatta|mayli|yubor|tasdiqla|to'g'ri|bo'pti|xo'p|ok|okey|ayni)\b""")
+        private val LOCAL_ONLY = setOf(IntentType.READ_CALL_HISTORY, IntentType.CALL_FROM_HISTORY, IntentType.COMPOSE_SMS,
+            IntentType.SOCIAL_MESSAGE, IntentType.ADD_CONTACT, IntentType.PHONE_SETTING, IntentType.PAUSE_MICROPHONE, IntentType.RESUME_MICROPHONE, IntentType.OPEN_APP, IntentType.CONTROL_PHONE, IntentType.PLAY_GAME, IntentType.ANALYZE_CHESS, IntentType.LIST_REMINDERS, IntentType.NEXT_REMINDER, IntentType.RENAME_REMINDER, IntentType.DELETE_REMINDER, IntentType.WAKE, IntentType.START_SESSION, IntentType.STOP_SESSION, IntentType.TIME_QUERY)
+        private val YES_RE = Regex("""(?:(?:ha|xa|albatta|mayli|tasdiqla|to'g'ri|bo'pti|xo'p|ok|okey|ayni)(?:\s+(?:yubor|tasdiqla|qo'ng'iroq qil|o'chir))?|yubor)""")
         private val NO_RE = Regex("""^(yo'q|yoq|kerak emas|bekor|bekor qil|to'xta|qo'y|shart emas)\b.*""")
     }
 }

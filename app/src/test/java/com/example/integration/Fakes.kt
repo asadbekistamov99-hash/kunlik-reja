@@ -19,20 +19,44 @@ class FakeDevice : DeviceActions {
     var files: List<FileHit> = emptyList()
     var contacts: List<ContactHit> = emptyList()
     var notifications: List<NotificationItem> = emptyList()
+    var callHistoryEnabled = true
+    var callRows: List<com.jarvis.integrations.CallRecord> = emptyList()
+    val smsDrafts = mutableListOf<Pair<String, String>>()
+    val replies = mutableListOf<Pair<NotificationItem, String>>()
+    override fun callHistoryAvailable() = callHistoryEnabled
+    override fun recentCalls(limit: Int) = callRows.take(limit)
+    override fun draftSms(number: String, text: String): com.jarvis.core.DeviceResult {
+        smsDrafts += number to text
+        return com.jarvis.core.DeviceResult("SMS qoralamasi ochildi; yuborishni tasdiqlang.", false)
+    }
+    override fun replyNotification(item: NotificationItem, text: String): com.jarvis.core.DeviceResult {
+        replies += item to text
+        return com.jarvis.core.DeviceResult("Javob ilovaga uzatildi.", true)
+    }
     var cleared = false
     var folders = true
+    var launchResult = ActivityLauncher.Result.STARTED
+    var clearResult = true
+    var analyzedPgn: String? = null
+    override suspend fun analyzeChess(pgn: String): com.jarvis.core.DeviceResult {
+        analyzedPgn = pgn
+        return com.jarvis.core.DeviceResult("AI tahlili", true)
+    }
 
-    override fun openCamera(video: Boolean): ActivityLauncher.Result { cameraOpened = video; return ActivityLauncher.Result.STARTED }
+    override fun openCamera(video: Boolean): ActivityLauncher.Result { cameraOpened = video; return launchResult }
     override fun hasFileFolders() = folders
     override fun findFiles(query: String, extension: String?) = files.filter { extension == null || it.name.endsWith(".$extension") }
-    override fun openFile(hit: FileHit): ActivityLauncher.Result { opened += hit; return ActivityLauncher.Result.STARTED }
+    override fun openFile(hit: FileHit): ActivityLauncher.Result { opened += hit; return launchResult }
     override fun hasContactsPermission() = true
     override fun findContacts(name: String) = contacts.filter { it.name.contains(name, ignoreCase = true) }
     override fun findEmail(name: String) = contacts.firstOrNull { it.name.contains(name, ignoreCase = true) }?.email
-    override fun call(contact: ContactHit): ActivityLauncher.Result { calls += contact; return ActivityLauncher.Result.STARTED }
+    override fun call(contact: ContactHit): ActivityLauncher.Result { calls += contact; return launchResult }
     override fun notificationsAvailable() = true
-    override fun recentNotifications() = notifications
-    override fun clearNotifications(): Boolean { cleared = true; notifications = emptyList(); return true }
+    override fun recentNotifications(limit: Int) = notifications.take(limit)
+    override fun clearNotifications(): Boolean {
+        if (clearResult) { cleared = true; notifications = emptyList() }
+        return clearResult
+    }
 }
 
 class FakeCalendar(private val enabled: Boolean = true) : CalendarPort {
@@ -50,10 +74,15 @@ class FakeCalendar(private val enabled: Boolean = true) : CalendarPort {
 
 class FakeMail(private val connected: Boolean = true) : MailPort {
     val sent = mutableListOf<Triple<String, String, String>>()
+    var sendFailure: Exception? = null
     val drafts = mutableListOf<Triple<String, String, String>>()
     var inbox = listOf(EmailSummary("1", "Ali", "Hisobot", "Salom", ""))
     override fun isConnected() = connected
     override suspend fun unread(max: Int) = inbox
     override suspend fun draft(to: String, subject: String, body: String) = "d1".also { drafts += Triple(to, subject, body) }
-    override suspend fun send(to: String, subject: String, body: String) = "m1".also { sent += Triple(to, subject, body) }
+    override suspend fun send(to: String, subject: String, body: String): String {
+        sendFailure?.let { throw it }
+        sent += Triple(to, subject, body)
+        return "m1"
+    }
 }
