@@ -3,7 +3,7 @@ name: Build Jarvis APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, work]
+    branches: [main, work, codex/jarvis-1.4.0]
 
 permissions:
   contents: read
