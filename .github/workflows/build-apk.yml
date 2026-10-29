@@ -1,60 +1,44 @@
 name: Build Jarvis APK
 
 on:
-  workflow_dispatch:
   push:
     branches: [main, work, codex/jarvis-1.4.0]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build, test and upload APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android licenses
-        run: yes | sdkmanager --licenses >/dev/null || true
-
-      - name: Install Android build tools
-        shell: bash
-        run: |
-          set -e
-          SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          fi
-          if [ -n "$SDKMANAGER" ]; then
-            "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
-          else
-            echo "sdkmanager not exposed; using the runner's preinstalled Android SDK"
-          fi
-
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android SDK platform
+        run: sdkmanager 'platforms;android-36.1' 'build-tools;36.0.0'
       - name: Make Gradle executable
         run: chmod +x gradlew
-
-      - name: Verify Gradle environment
-        run: ./gradlew --version
-
-      - name: Build, test and lint
-        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace --no-daemon
-
+      - name: Run unit and integration tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace --no-daemon
+      - name: Run lint
+        run: ./gradlew :app:lintDebug --stacktrace --no-daemon
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-ultra-debug-apk
+          name: jarvis-ultra-1.4.0-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
