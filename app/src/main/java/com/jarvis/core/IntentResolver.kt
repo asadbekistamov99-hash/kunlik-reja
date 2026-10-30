@@ -365,7 +365,7 @@ class IntentResolver {
             "pptx" to "ppt", "ppt" to "ppt", "taqdimot" to "ppt", "prezentatsiya" to "ppt", "txt" to "txt"
         )
         private val CALL_RE = Regex("""\b(?:bog'lan\w*|qo'ng'iroq\w*(?: qil\w*)?|telefon qil\w*|tel qil\w*|chaqir\w*|zvonok\w*|qo'ng'iroq)""")
-        private val DATIVE_RE = Regex("""(?:ga|ka|qa|gа)$""")
+        private val DATIVE_RE = Regex("""(?:ga|ka|qa|ga)$""")
         private val NOTIFICATION_RE = Regex("""\b(?:bildirishnoma\w*|xabarnoma\w*|notifikatsiya\w*|notification\w*|bildirish)""")
         private val CLEAR_RE = Regex("""\b(?:tozala|o'chir|yop|tashla)\w*""")
         private val EMAIL_RE = Regex("""\b(?:email\w*|e-mail\w*|pochta\w*|gmail\w*|xat\b|xatlar\w*|xatni|xatga|maktub\w*|xat yoz\w*|xat yubor\w*)""")
