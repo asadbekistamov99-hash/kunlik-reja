@@ -102,7 +102,7 @@ Mic ─▶ WakeWordEngine ("Jarvis") ─▶ VoiceSessionManager ─▶ SpeechToT
              TextToSpeech ◀── reply ◀── ActionExecutor ◀── IntentResolver / GeminiAgent
 ```
 
-Database (Room v4, SQLCipher): `tasks`, `habits`, `reminders`, `memories`, `conversations`, `user_settings`.
+Database (Room v5, SQLCipher): `tasks`, `habits`, `reminders`, `memories`, `conversations`, `user_settings`.
 Existing Kun Tartibi v3 databases are encrypted in place and migrated without data loss.
 
 ## Building

@@ -147,7 +147,7 @@ class AppContainer(
     // ---- brain & voice ----
     fun apiKey(name: String, buildDefault: String, placeholder: String): String? =
         secureStore.getString(name)?.takeIf { it.isNotBlank() }
-            ?: buildDefault.takeIf { it.isNotBlank() && it != placeholder }
+            ?: buildDefault.takeIf { BuildConfig.DEBUG && it.isNotBlank() && it != placeholder }
 
     fun picovoiceKey(): String? =
         apiKey(SecureStore.PICOVOICE_ACCESS_KEY, BuildConfig.PICOVOICE_ACCESS_KEY, "MY_PICOVOICE_ACCESS_KEY")
