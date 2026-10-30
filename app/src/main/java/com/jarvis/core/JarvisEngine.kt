@@ -202,7 +202,7 @@ class JarvisEngine(
         const val CONFIDENT = 0.75f
         private val LOCAL_ONLY = setOf(IntentType.READ_CALL_HISTORY, IntentType.CALL_FROM_HISTORY, IntentType.COMPOSE_SMS,
             IntentType.SOCIAL_MESSAGE, IntentType.ADD_CONTACT, IntentType.PHONE_SETTING, IntentType.PAUSE_MICROPHONE, IntentType.RESUME_MICROPHONE, IntentType.OPEN_APP, IntentType.CONTROL_PHONE, IntentType.PLAY_GAME, IntentType.ANALYZE_CHESS, IntentType.LIST_REMINDERS, IntentType.NEXT_REMINDER, IntentType.RENAME_REMINDER, IntentType.DELETE_REMINDER, IntentType.WAKE, IntentType.START_SESSION, IntentType.STOP_SESSION, IntentType.TIME_QUERY)
-        private val YES_RE = Regex("""(?:(?:ha|xa|albatta|mayli|tasdiqla|to'g'ri|bo'pti|xo'p|ok|okey|ayni)(?:\s+(?:yubor|tasdiqla|qo'ng'iroq qil|o'chir))?|yubor)""")
+        private val YES_RE = Regex("""^(?:(?:ha|xa|albatta|mayli|tasdiqla|to'g'ri|bo'pti|xo'p|ok|okey|ayni)(?:\s+(?:yubor|tasdiqla|qo'ng'iroq qil|o'chir))?|yubor)$""", RegexOption.IGNORE_CASE)
         private val NO_RE = Regex("""^(yo'q|yoq|kerak emas|bekor|bekor qil|to'xta|qo'y|shart emas)\b.*""")
     }
 }
