@@ -145,10 +145,15 @@ class OpenAiVoice(
  * O'zbekcha matnni tabiiy nutqqa tayyorlovchi (Orfoepik & Prosody Pre-processor)
  * hamda AudioFocus va dinamik ovoz kuchaytirishga ega TextToSpeechManager.
  */
+interface SpeechOutput {
+    suspend fun speak(text: String): Boolean
+    fun stop()
+}
+
 class TextToSpeechManager(
     private val context: Context,
     private val neuralVoices: List<NeuralVoice> = emptyList()
-) : AndroidTts.OnInitListener {
+) : AndroidTts.OnInitListener, SpeechOutput {
 
     private var tts: AndroidTts? = null
     private val ready = CompletableDeferred<Boolean>()
@@ -222,7 +227,7 @@ class TextToSpeechManager(
         }
     }
 
-    suspend fun speak(text: String): Boolean {
+    override suspend fun speak(text: String): Boolean {
         val prepared = prepareUzbekSpeechText(text)
         if (prepared.isBlank()) return false
         stopped.set(false)
@@ -241,13 +246,16 @@ class TextToSpeechManager(
                         return@withAudioFocus true
                     }
                 }
+                // A selected cloud voice must never silently switch to the device voice.
+                lastEngine = neural.id
+                return@withAudioFocus false
             }
             lastEngine = "device"
             speakWithDevice(prepared)
         }
     }
 
-    fun stop() {
+    override fun stop() {
         stopped.set(true)
         runCatching {
             activeTrack?.pause()

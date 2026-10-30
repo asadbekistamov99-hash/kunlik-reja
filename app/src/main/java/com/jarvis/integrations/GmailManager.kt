@@ -35,13 +35,16 @@ class GmailManager(
     suspend fun createDraft(to: String, subject: String, body: String): String {
         val raw = MimeMessage.build(to, subject, body)
         val result = api.call("POST", "$baseUrl/drafts", JSONObject().put("message", JSONObject().put("raw", raw)))
-        return result.optString("id")
+        return confirmedId(result)
     }
 
     suspend fun send(to: String, subject: String, body: String): String {
         val raw = MimeMessage.build(to, subject, body)
-        return api.call("POST", "$baseUrl/messages/send", JSONObject().put("raw", raw)).optString("id")
+        return confirmedId(api.call("POST", "$baseUrl/messages/send", JSONObject().put("raw", raw)))
     }
+
+    private fun confirmedId(result: JSONObject): String = result.optString("id").takeIf { it.isNotBlank() }
+        ?: throw java.io.IOException("Gmail did not return a message ID")
 
     companion object {
         fun displayName(from: String): String =

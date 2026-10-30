@@ -116,7 +116,8 @@ Qoidalar:
 2. Agar foydalanuvchi eslatish haqida aytsa -> ADD_REMINDER.
 3. Agar foydalanuvchi biror ishni bajarganini aytsa -> COMPLETE_TASK.
 4. Agar foydalanuvchi vazifani o'chirishni so'rasa -> DELETE_TASK.
-5. Agar foydalanuvchi vazifa vaqtini o'zgartirishni so'rasa -> RESCHEDULE_TASK.
+5. Eslatma vaqtini o'zgartirish -> RESCHEDULE_REMINDER. Yangi eslatma yaratma. Sana aytilmasa bugun deb ol; o'tgan vaqtni ertaga surma.
+5a. Agar foydalanuvchi vazifa vaqtini o'zgartirishni so'rasa -> RESCHEDULE_TASK.
 6. Agar foydalanuvchi erkin savol bersa yoki suhbat qursa -> UNKNOWN va "reply" slotiga o'zbek tilida aniq, ravon, qisqa javob yoz.
 """.trimIndent()
     }

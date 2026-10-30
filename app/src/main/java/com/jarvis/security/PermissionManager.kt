@@ -21,10 +21,12 @@ enum class JarvisCapability(val titleUz: String, val reasonUz: String) {
     EXACT_ALARMS("Aniq budilnik", "Eslatmalar aynan belgilangan vaqtda chalinishi uchun"),
     BATTERY("Batareya cheklovisiz", "Jarvis fonda 24/7 ishlashi uchun"),
     CONTACTS("Kontaktlar", "\"doktor bilan bog'lan\" kabi buyruqlar uchun"),
+    CALL_HISTORY("Qo'ng'iroqlar tarixi", "Oxirgi qo'ng'iroqlarni o'qish va ro'yxatdan tanlab qo'ng'iroq qilish uchun"),
     PHONE("Qo'ng'iroq", "Kontaktga to'g'ridan-to'g'ri qo'ng'iroq qilish uchun"),
     CALENDAR("Taqvim", "Qurilma taqvimi bilan ishlash uchun (Google hisobisiz rejim)"),
     MEDIA("Media fayllar", "Rasm, video va audio fayllarni topish uchun"),
     NOTIFICATION_ACCESS("Bildirishnomalarni o'qish", "Boshqa ilovalar xabarlarini o'qib berish uchun"),
+    PHONE_CONTROL("Telefonni boshqarish", "Sizning buyruqlaringiz bilan ekran matnini o'qish, tugmalarni bosish va o'yin yurishlarini bajarish uchun"),
     OVERLAY("Boshqa ilovalar ustida", "Qayta yuklangandan keyin avtomatik yoqilish va qulflangan ekranda kamera/qo'ng'iroq uchun");
 }
 
@@ -35,6 +37,7 @@ class PermissionManager(private val context: Context) {
         JarvisCapability.NOTIFICATIONS ->
             if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray()
         JarvisCapability.CONTACTS -> arrayOf(Manifest.permission.READ_CONTACTS)
+        JarvisCapability.CALL_HISTORY -> arrayOf(Manifest.permission.READ_CALL_LOG)
         JarvisCapability.PHONE -> arrayOf(Manifest.permission.CALL_PHONE)
         JarvisCapability.CALENDAR -> arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
         JarvisCapability.MEDIA ->
@@ -50,6 +53,7 @@ class PermissionManager(private val context: Context) {
         JarvisCapability.EXACT_ALARMS -> canScheduleExactAlarms()
         JarvisCapability.BATTERY -> isIgnoringBatteryOptimizations()
         JarvisCapability.NOTIFICATION_ACCESS -> hasNotificationAccess()
+        JarvisCapability.PHONE_CONTROL -> hasPhoneControl()
         JarvisCapability.OVERLAY -> Settings.canDrawOverlays(context)
         else -> runtimePermissions(capability).all { has(it) }
     }
@@ -68,6 +72,7 @@ class PermissionManager(private val context: Context) {
                     ComponentName(context, JarvisNotificationListener::class.java).flattenToString()
                 )
             } else Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        JarvisCapability.PHONE_CONTROL -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         JarvisCapability.OVERLAY -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, packageUri())
         else -> null
     }
@@ -90,6 +95,13 @@ class PermissionManager(private val context: Context) {
 
     fun hasNotificationAccess(): Boolean =
         NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+    fun hasPhoneControl(): Boolean {
+        if (Settings.Secure.getInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0) != 1) return false
+        val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        val component = ComponentName(context, com.jarvis.phone.JarvisAccessibilityService::class.java)
+        return enabled.split(':').any { ComponentName.unflattenFromString(it) == component }
+    }
 
     private fun packageUri(): Uri = Uri.parse("package:${context.packageName}")
 }

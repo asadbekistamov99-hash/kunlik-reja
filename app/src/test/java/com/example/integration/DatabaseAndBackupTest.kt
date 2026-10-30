@@ -67,6 +67,30 @@ class DatabaseAndBackupTest {
         }
     }
 
+    @Test fun `v5 reminder survives recurrence anchor migration`() = runBlocking {
+        val name = "migration-v5-test.db"
+        createV3(name)
+        val helper = androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory().create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context).name(name)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(5) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {}
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                        com.example.data.Migrations.MIGRATION_3_4.migrate(db)
+                        com.example.data.Migrations.MIGRATION_4_5.migrate(db)
+                    }
+                }).build())
+        helper.writableDatabase.execSQL("INSERT INTO reminders(id,taskId,title,message,triggerAtMillis,repeatIntervalMinutes,isActive,createdAt) VALUES(9,NULL,'Dori','',123456,1440,1,1000)")
+        helper.close()
+        val db = MemoryDatabase.build(context, null, name)
+        try {
+            val reminder = db.reminderDao().getById(9)!!
+            assertEquals("Dori", reminder.title)
+            assertEquals(123456L, reminder.firstTriggerAtMillis)
+            assertEquals(123456L, reminder.triggerAtMillis)
+            assertEquals("Saqlangan vazifa", db.taskDao().getTaskById(7)!!.title)
+        } finally { db.close(); context.deleteDatabase(name) }
+    }
+
     @Test fun `plaintext header detection`() {
         val f = File(context.cacheDir, "notdb.bin").apply { writeBytes(ByteArray(64) { 7 }) }
         assertFalse(DatabaseEncryption.isPlaintext(f))

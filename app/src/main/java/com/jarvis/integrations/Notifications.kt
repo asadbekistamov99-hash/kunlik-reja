@@ -15,7 +15,8 @@ data class NotificationItem(
     val title: String,
     val text: String,
     val postTime: Long,
-    val clearable: Boolean
+    val clearable: Boolean,
+    val canReply: Boolean = false
 )
 
 /** Receives other apps' notifications once the user enables notification access for Jarvis. */
@@ -58,7 +59,7 @@ class JarvisNotificationListener : NotificationListenerService() {
             }
             packageManager.getApplicationLabel(info).toString()
         }.getOrDefault(sbn.packageName)
-        return NotificationItem(sbn.key, sbn.packageName, label, title, text, sbn.postTime, sbn.isClearable)
+        return NotificationItem(sbn.key, sbn.packageName, label, title, text, sbn.postTime, sbn.isClearable, replyAction(sbn.notification) != null)
     }
 
     companion object {
@@ -67,6 +68,34 @@ class JarvisNotificationListener : NotificationListenerService() {
         val active: StateFlow<List<NotificationItem>> = _active.asStateFlow()
 
         val isConnected: Boolean get() = instance != null
+
+        fun replyAction(notification: Notification): Notification.Action? {
+            val candidates = notification.actions.orEmpty().filter { action ->
+                action.remoteInputs.orEmpty().count { it.allowFreeFormInput } == 1
+            }
+            @Suppress("NewApi")
+            val semantic = if (android.os.Build.VERSION.SDK_INT >= 28)
+                candidates.filter { it.semanticAction == Notification.Action.SEMANTIC_ACTION_REPLY }.singleOrNull() else null
+            return semantic ?: candidates.singleOrNull()
+        }
+
+        fun reply(item: NotificationItem, text: String): com.jarvis.core.DeviceResult {
+            val listener = instance ?: return com.jarvis.core.DeviceResult("Bildirishnoma xizmati ulanmagan.", false)
+            return try {
+                val current = listener.activeNotifications.orEmpty().firstOrNull { it.key == item.key }
+                if (current == null || current.packageName != item.packageName || current.postTime != item.postTime ||
+                    current.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty() != item.title ||
+                    (current.notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT) ?: current.notification.extras.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty() != item.text) {
+                    return com.jarvis.core.DeviceResult("Xabar o'zgargan yoki yo'qolgan. Ro'yxatni qayta so'rang.", false)
+                }
+                val action = replyAction(current.notification) ?: return com.jarvis.core.DeviceResult("Bu xabarda tezkor javob mavjud emas.", false)
+                val input = action.remoteInputs.first { it.allowFreeFormInput }
+                val fill = android.content.Intent()
+                android.app.RemoteInput.addResultsToIntent(action.remoteInputs, fill, android.os.Bundle().apply { putCharSequence(input.resultKey, text) })
+                action.actionIntent.send(listener, 0, fill)
+                com.jarvis.core.DeviceResult("Javob ${item.appName} ilovasiga uzatildi. Yetkazilganini ilovada tekshiring.", true)
+            } catch (e: Exception) { com.jarvis.core.DeviceResult("Javob uzatilmadi. Xabar va bildirishnoma ruxsatini tekshiring.", false) }
+        }
 
         fun dismiss(key: String): Boolean = instance?.let { it.cancelNotification(key); true } ?: false
 
@@ -89,9 +118,9 @@ class Notifications(private val hasAccess: () -> Boolean) {
         fun describe(items: List<NotificationItem>): String {
             if (items.isEmpty()) return "Yangi bildirishnomalar yo'q."
             val sb = StringBuilder("${items.size} ta bildirishnoma bor. ")
-            items.take(5).forEach { n ->
-                sb.append("${n.appName}: ${n.title}")
-                if (n.text.isNotBlank()) sb.append(" — ${n.text.take(120)}")
+            items.forEachIndexed { index, n ->
+                sb.append("${index + 1}. ${n.appName}: ${n.title}")
+                if (n.text.isNotBlank()) sb.append(" — ${n.text}")
                 sb.append(". ")
             }
             return sb.toString().trim()

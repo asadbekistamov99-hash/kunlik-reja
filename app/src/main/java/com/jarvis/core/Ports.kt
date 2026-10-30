@@ -9,6 +9,8 @@ import com.jarvis.integrations.NotificationItem
 import java.time.LocalDate
 import java.time.ZonedDateTime
 
+data class DeviceResult(val text: String, val success: Boolean)
+
 /** Phone capabilities the agent can use. Abstracted so the agent logic is testable off-device. */
 interface DeviceActions {
     fun openCamera(video: Boolean): ActivityLauncher.Result
@@ -20,8 +22,20 @@ interface DeviceActions {
     fun findEmail(name: String): String?
     fun call(contact: ContactHit): ActivityLauncher.Result
     fun notificationsAvailable(): Boolean
-    fun recentNotifications(): List<NotificationItem>
+    fun recentNotifications(limit: Int = 10): List<NotificationItem>
     fun clearNotifications(): Boolean
+    suspend fun openApp(name: String): DeviceResult = DeviceResult("Telefon boshqaruvi ulanmagan.", false)
+    suspend fun controlPhone(instruction: String): DeviceResult = DeviceResult("Telefon boshqaruvi ulanmagan.", false)
+    suspend fun playGame(goal: String): DeviceResult = DeviceResult("O'yin agenti ulanmagan.", false)
+    suspend fun analyzeChess(pgn: String): DeviceResult = DeviceResult("Shaxmat tahlili ulanmagan.", false)
+    fun callHistoryAvailable(): Boolean = false
+    fun recentCalls(limit: Int): List<com.jarvis.integrations.CallRecord> = emptyList()
+    fun draftSms(number: String, text: String): DeviceResult = DeviceResult("SMS ulanmagan.", false)
+    fun addContact(name: String, number: String): DeviceResult = DeviceResult("Kontakt qo'shish ulanmagan.", false)
+    fun socialDraft(app: String, text: String): DeviceResult = DeviceResult("Xabar tayyorlash ulanmagan.", false)
+    fun replyNotification(item: NotificationItem, text: String): DeviceResult = DeviceResult("Bildirishnomaga javob ulanmagan.", false)
+    suspend fun phoneSetting(command: String): DeviceResult = DeviceResult("Telefon sozlamalari ulanmagan.", false)
+    fun stopPhoneControl() {}
 }
 
 interface CalendarPort {

@@ -119,8 +119,24 @@ class AppContainer(
     val activityLauncher by lazy { ActivityLauncher(context) }
     val camera by lazy { CameraManager(activityLauncher) }
     val files by lazy { FileManager(context, activityLauncher) { settings.state.value.fileTreeUris } }
+    val phoneCommunications by lazy { com.jarvis.integrations.PhoneCommunications(context, activityLauncher) }
+    val phoneSettings by lazy { com.jarvis.phone.PhoneSettings(context, activityLauncher, phoneDriver) }
     val contacts by lazy { ContactManager(context, activityLauncher) }
     val notifications by lazy { Notifications { permissions.hasNotificationAccess() } }
+    private val phoneDriver = object : com.jarvis.phone.PhoneDriver {
+        override suspend fun screen(withImage: Boolean) = com.jarvis.phone.JarvisAccessibilityService.instance?.screen(withImage)
+        override suspend fun act(screen: com.jarvis.phone.PhoneScreen, step: com.jarvis.phone.PhoneStep) =
+            com.jarvis.phone.JarvisAccessibilityService.instance?.act(screen, step) == true
+    }
+    private val gamePlanner by lazy { com.jarvis.phone.GeminiGamePlanner(http,
+        { apiKey(SecureStore.GEMINI_API_KEY, BuildConfig.GEMINI_API_KEY, "MY_GEMINI_API_KEY") }, network::isOnline) }
+    suspend fun analyzeChess(pgn: String): com.jarvis.core.DeviceResult =
+        if (settings.state.value.aiMode == com.jarvis.settings.AiMode.OFFLINE_ONLY)
+            com.jarvis.core.DeviceResult("Partiya tahlili uchun oflayn rejimini o'chiring.", false)
+        else gamePlanner.analyze(pgn)
+    val gameController: com.jarvis.phone.GameController by lazy { com.jarvis.phone.GameController(phoneDriver, gamePlanner, appScope,
+        { phoneCommands.isGame(it) }, { settings.state.value.gameScreenConsent && settings.state.value.aiMode != com.jarvis.settings.AiMode.OFFLINE_ONLY }) }
+    private val phoneCommands: com.jarvis.phone.PhoneCommands by lazy { com.jarvis.phone.PhoneCommands(context, activityLauncher, phoneDriver, gameController) }
     val googleAuth by lazy { GoogleAuth(context, http) }
     private val googleApi by lazy { GoogleApi(http) { googleAuth.accessToken() } }
     val calendar by lazy {
@@ -131,7 +147,7 @@ class AppContainer(
     // ---- brain & voice ----
     fun apiKey(name: String, buildDefault: String, placeholder: String): String? =
         secureStore.getString(name)?.takeIf { it.isNotBlank() }
-            ?: buildDefault.takeIf { it.isNotBlank() && it != placeholder }
+            ?: buildDefault.takeIf { BuildConfig.DEBUG && it.isNotBlank() && it != placeholder }
 
     fun picovoiceKey(): String? =
         apiKey(SecureStore.PICOVOICE_ACCESS_KEY, BuildConfig.PICOVOICE_ACCESS_KEY, "MY_PICOVOICE_ACCESS_KEY")
@@ -179,7 +195,8 @@ class AppContainer(
                 { apiKey(SecureStore.OPENAI_API_KEY, BuildConfig.OPENAI_API_KEY, "MY_OPENAI_API_KEY") }, network::isOnline),
             vosk = vosk,
             choice = { settings.state.value.sttEngine },
-            online = network::isOnline
+            online = network::isOnline,
+            microphoneGranted = { permissions.isGranted(com.jarvis.security.JarvisCapability.MICROPHONE) }
         )
     }
     val voice by lazy { VoiceSession(engine, sttRouter, tts, appScope) }
@@ -236,8 +253,20 @@ class AppContainer(
         override fun findEmail(name: String): String? = contacts.findEmail(name)
         override fun call(contact: ContactHit) = contacts.call(contact)
         override fun notificationsAvailable() = notifications.isAvailable()
-        override fun recentNotifications(): List<NotificationItem> = notifications.recent()
+        override fun recentNotifications(limit: Int): List<NotificationItem> = notifications.recent(limit)
         override fun clearNotifications() = notifications.clearAll()
+        override suspend fun openApp(name: String) = phoneCommands.open(name)
+        override suspend fun controlPhone(instruction: String) = phoneCommands.execute(instruction)
+        override suspend fun playGame(goal: String) = gameController.start(goal)
+        override suspend fun analyzeChess(pgn: String) = this@AppContainer.analyzeChess(pgn)
+        override fun callHistoryAvailable() = phoneCommunications.historyAvailable()
+        override fun recentCalls(limit: Int) = phoneCommunications.recentCalls(limit)
+        override fun draftSms(number: String, text: String) = phoneCommunications.sms(number, text)
+        override fun addContact(name: String, number: String) = phoneCommunications.addContact(name, number)
+        override fun socialDraft(app: String, text: String) = phoneCommunications.socialDraft(app, text)
+        override fun replyNotification(item: NotificationItem, text: String) = com.jarvis.integrations.JarvisNotificationListener.reply(item, text)
+        override suspend fun phoneSetting(command: String) = phoneSettings.execute(command)
+        override fun stopPhoneControl() = gameController.stop()
     }
 
     private val calendarPort = object : CalendarPort {

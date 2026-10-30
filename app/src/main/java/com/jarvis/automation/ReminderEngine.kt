@@ -32,6 +32,46 @@ class ReminderEngine(
         return saved
     }
 
+    suspend fun rescheduleReminder(reminder: Reminder, triggerAtMillis: Long): Reminder {
+        require(triggerAtMillis > clock()) { "Eslatma vaqti o'tib ketgan" }
+        val updated = reminder.copy(triggerAtMillis = triggerAtMillis, firstTriggerAtMillis = triggerAtMillis, isActive = true)
+        reminderDao.update(updated)
+        // The same PendingIntent replaces the old alarm only after the database write succeeds.
+        schedule(updated)
+        return updated
+    }
+
+    /** A separate occurrence keeps a daily reminder's next scheduled day intact. */
+    suspend fun snooze(title: String, message: String): Reminder = addReminder(
+        Reminder(title = title, message = message, triggerAtMillis = clock() + 5 * 60_000L)
+    )
+
+    suspend fun allReminders(): List<Reminder> = reminderDao.getAll().sortedBy { it.triggerAtMillis }
+    suspend fun onDate(date: java.time.LocalDate, zone: java.time.ZoneId): List<Reminder> {
+        val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        return allReminders().flatMap { reminder ->
+            if (reminder.repeatIntervalMinutes <= 0 || !reminder.isActive) {
+                listOfNotNull(reminder.takeIf { it.triggerAtMillis in start until end })
+            } else {
+                val interval = reminder.repeatIntervalMinutes * 60_000L
+                val anchor = reminder.firstTriggerAtMillis.takeIf { it > 0 } ?: reminder.triggerAtMillis
+                val offset = if (anchor >= start) 0 else (start - anchor - 1) / interval + 1
+                generateSequence(anchor + offset * interval) { it + interval }.takeWhile { it < end }
+                    .map { reminder.copy(triggerAtMillis = it) }.toList()
+            }
+        }.sortedWith(compareBy<Reminder> { it.triggerAtMillis }.thenBy { it.id })
+    }
+
+    suspend fun getReminder(id: Long): Reminder? = reminderDao.getById(id)
+
+    suspend fun renameReminder(reminder: Reminder, title: String): Reminder {
+        require(title.isNotBlank()) { "Eslatma nomi bo'sh" }
+        val updated = reminder.copy(title = title.trim())
+        reminderDao.update(updated)
+        return updated
+    }
+
     suspend fun cancelReminder(id: Long) {
         cancel(reminderIntent(id))
         reminderDao.delete(id)
@@ -69,7 +109,7 @@ class ReminderEngine(
 
     /** Called when a reminder fired: re-arms repeating ones, deactivates one-shots. */
     suspend fun onReminderFired(id: Long): Reminder? {
-        val reminder = reminderDao.getById(id) ?: return null
+        val reminder = reminderDao.getById(id)?.takeIf { it.isActive } ?: return null
         if (reminder.repeatIntervalMinutes > 0) {
             val next = nextTrigger(reminder, clock() + 1000) ?: return reminder
             val updated = reminder.copy(triggerAtMillis = next)
@@ -92,6 +132,10 @@ class ReminderEngine(
         Log.i(TAG, "Rescheduled $count alarms")
         return count
     }
+
+    fun canScheduleExactly(): Boolean = alarmManager?.let {
+        Build.VERSION.SDK_INT < 31 || it.canScheduleExactAlarms()
+    } == true
 
     private fun setAlarm(triggerAt: Long, pi: PendingIntent) {
         val am = alarmManager ?: return

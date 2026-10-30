@@ -8,6 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  *  v3 — tasks + habits (Kun Tartibi planner)
  *  v4 — Jarvis Ultra: reminders, memories, conversations, user_settings
  *  v5 — tasks.deadline and tasks.completedAt
+ *  v6 — reminder recurrence start, so day queries survive re-arming
  */
 object Migrations {
 
@@ -50,5 +51,12 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_3_4, MIGRATION_4_5)
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `reminders` ADD COLUMN `firstTriggerAtMillis` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("UPDATE `reminders` SET `firstTriggerAtMillis` = `triggerAtMillis`")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 }

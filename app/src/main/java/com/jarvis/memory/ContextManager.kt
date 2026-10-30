@@ -18,6 +18,12 @@ class ContextManager {
         private set
     @Volatile var lastReminders: List<Reminder> = emptyList()
         private set
+    @Volatile var selectedReminder: Reminder? = null
+        private set
+    @Volatile var lastCalls: List<com.jarvis.integrations.CallRecord> = emptyList()
+        private set
+    @Volatile var lastNotifications: List<com.jarvis.integrations.NotificationItem> = emptyList()
+        private set
     @Volatile var lastFiles: List<FileHit> = emptyList()
         private set
     @Volatile var lastContacts: List<ContactHit> = emptyList()
@@ -36,8 +42,20 @@ class ContextManager {
         lastInteractionAt = System.currentTimeMillis()
     }
 
+    fun rememberCalls(calls: List<com.jarvis.integrations.CallRecord>) { lastCalls = calls.toList() }
+    fun rememberNotifications(items: List<com.jarvis.integrations.NotificationItem>) { lastNotifications = items.toList() }
+    fun callIndex(text: String): Int? {
+        Regex("""\b(\d{1,2})\s*-?\s*(?:chi\w*|si\w*)\b""").find(text)?.let { return it.groupValues[1].toInt() - 1 }
+        text.trim().toIntOrNull()?.let { return it - 1 }
+        return referencedIndex(text)
+    }
+
     fun rememberTasks(tasks: List<Task>) { lastTasks = tasks.take(20) }
-    fun rememberReminders(reminders: List<Reminder>) { lastReminders = reminders.take(20) }
+    fun rememberReminders(reminders: List<Reminder>) {
+        lastReminders = reminders.toList()
+        selectedReminder = reminders.singleOrNull()
+    }
+    fun selectReminder(reminder: Reminder) { selectedReminder = reminder }
     fun rememberFiles(files: List<FileHit>) { lastFiles = files.take(20) }
     fun rememberContacts(contacts: List<ContactHit>) { lastContacts = contacts.take(20) }
 
@@ -45,7 +63,7 @@ class ContextManager {
     fun referencedIndex(text: String): Int? {
         ORDINALS.entries.firstOrNull { (word, _) -> Regex("""\b$word\w*""").containsMatchIn(text) }?.let { return it.value }
         Regex("""\b(\d{1,2})\s*-?\s*(?:chi|nchi|inchi)\w*""").find(text)?.let { return it.groupValues[1].toInt() - 1 }
-        if (Regex("""\b(?:uni|shuni|buni|o'shani)\b""").containsMatchIn(text)) return 0
+        if (Regex("""\b(?:uni|uning|shuni|shuning|buni|buning|shu|bu|o'shani|o'shaning)\b""").containsMatchIn(text)) return 0
         return null
     }
 
@@ -55,6 +73,9 @@ class ContextManager {
         lastIntent = null
         lastTasks = emptyList()
         lastReminders = emptyList()
+        selectedReminder = null
+        lastCalls = emptyList()
+        lastNotifications = emptyList()
         lastFiles = emptyList()
         lastContacts = emptyList()
         pendingConfirmation = null
@@ -65,7 +86,7 @@ class ContextManager {
     companion object {
         private const val STALE_AFTER_MS = 10 * 60 * 1000L
         private val ORDINALS = linkedMapOf(
-            "birinchi" to 0, "ikkinchi" to 1, "uchinchi" to 2, "to'rtinchi" to 3, "beshinchi" to 4, "oxirgi" to -1
+            "birinchi" to 0, "ikkinchi" to 1, "uchinchi" to 2, "to'rtinchi" to 3, "beshinchi" to 4, "oltinchi" to 5, "yettinchi" to 6, "sakkizinchi" to 7, "to'qqizinchi" to 8, "o'ninchi" to 9, "oxirgi" to -1
         )
     }
 }

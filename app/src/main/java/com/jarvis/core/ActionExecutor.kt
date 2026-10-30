@@ -44,17 +44,54 @@ class ActionExecutor(
         return try {
             dispatch(intent, parsed)
         } catch (e: Exception) {
-            JarvisResponse("Kechirasiz, bajarishda xatolik yuz berdi: ${e.message ?: e.javaClass.simpleName}", intent.type, success = false)
+            failure(intent, e)
         }
     }
 
+    private fun failure(intent: ResolvedIntent, e: Exception): JarvisResponse {
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        val message = if (e is java.io.IOException) "Tarmoq bilan aloqa uzildi. Amal bajarilganini tasdiqlay olmadim; qayta urinishdan oldin tekshiring."
+            else "Amal bajarilganini tasdiqlay olmadim. Ruxsatlar va ilova holatini tekshiring."
+        return JarvisResponse(message, intent.type, success = false)
+    }
+
+    fun stopPhoneControl() = device.stopPhoneControl()
+
     private suspend fun dispatch(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse = when (intent.type) {
-        IntentType.WAKE -> JarvisResponse(pick("Labbay, eshitaman.", "Ha, xizmatingizdaman.", "Eshitaman, gapiring."), intent.type, expectsReply = true)
+        IntentType.READ_CALL_HISTORY -> readCallHistory(intent)
+        IntentType.CALL_FROM_HISTORY -> callFromHistory(intent)
+        IntentType.COMPOSE_SMS -> composeSms(intent)
+        IntentType.SOCIAL_MESSAGE -> composeSocialMessage(intent)
+        IntentType.ADD_CONTACT -> addContact(intent)
+        IntentType.PHONE_SETTING -> device.phoneSetting(intent.slot(ResolvedIntent.CONTENT).orEmpty()).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        IntentType.PAUSE_MICROPHONE -> {
+            context.sessionActive = false
+            context.clear()
+            device.stopPhoneControl()
+            JarvisResponse("Jarvis mikrofoni pauzaga o'tadi. Qayta yoqish uchun bildirishnomadagi Gapirish tugmasini bosing.", intent.type, endSession = true)
+        }
+        IntentType.RESUME_MICROPHONE -> {
+            context.sessionActive = true
+            JarvisResponse("Jarvis mikrofoni yoqildi. Tinglayapman.", intent.type, expectsReply = true)
+        }
+        IntentType.OPEN_APP -> device.openApp(intent.slot(ResolvedIntent.TITLE).orEmpty()).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        IntentType.CONTROL_PHONE -> device.controlPhone(intent.slot(ResolvedIntent.CONTENT).orEmpty()).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        IntentType.PLAY_GAME -> device.playGame(intent.slot(ResolvedIntent.CONTENT).orEmpty()).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        IntentType.ANALYZE_CHESS -> {
+            val pgn = intent.slot(ResolvedIntent.CONTENT)
+            if (pgn == null) askFor(intent, ResolvedIntent.CONTENT, "Tugagan partiyaning PGN yozuvini yuboring.")
+            else device.analyzeChess(pgn).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        }
+        IntentType.WAKE -> {
+            context.sessionActive = true
+            JarvisResponse("Labbay! Sizni tinglayapman. To'xtatish uchun Stop Jarvis deng.", intent.type, expectsReply = true)
+        }
         IntentType.START_SESSION -> {
             context.sessionActive = true
             JarvisResponse("Suhbat rejimi yoqildi. Men sizni tinglayapman.", intent.type, startSession = true, expectsReply = true)
         }
         IntentType.STOP_SESSION -> {
+            device.stopPhoneControl()
             context.sessionActive = false
             context.clear()
             JarvisResponse(pick("Xo'p. Kerak bo'lsam, \"Jarvis\" deb chaqiring.", "Mayli, dam oling. Kerak bo'lsam shu yerdaman.",
@@ -69,7 +106,10 @@ class ActionExecutor(
         IntentType.DAY_SUMMARY -> daySummary(intent)
         IntentType.SEARCH_TASKS -> searchTasks(intent)
         IntentType.ADD_REMINDER -> addReminder(intent, parsed)
-        IntentType.DELETE_REMINDER -> deleteReminder(intent)
+        IntentType.DELETE_REMINDER -> deleteReminder(intent, parsed)
+        IntentType.RENAME_REMINDER -> renameReminder(intent, parsed)
+        IntentType.NEXT_REMINDER -> nextReminder(intent)
+        IntentType.RESCHEDULE_REMINDER -> rescheduleReminder(intent, parsed)
         IntentType.LIST_REMINDERS -> listReminders(intent)
         IntentType.ADD_HABIT -> addHabit(intent)
         IntentType.REMEMBER -> remember(intent)
@@ -97,24 +137,39 @@ class ActionExecutor(
     }
 
     /** Runs a previously confirmed action (the user said "ha"). */
-    suspend fun executeConfirmed(intent: ResolvedIntent): JarvisResponse = when (intent.type) {
+    suspend fun executeConfirmed(intent: ResolvedIntent): JarvisResponse {
+        return try { confirmedAction(intent) } catch (e: Exception) { failure(intent, e) }
+    }
+
+    private suspend fun confirmedAction(intent: ResolvedIntent): JarvisResponse = when (intent.type) {
+        IntentType.COMPOSE_SMS -> {
+            val number = intent.slot("phone") ?: return JarvisResponse("SMS raqami aniqlanmadi.", intent.type, success = false)
+            device.draftSms(number, intent.slot(ResolvedIntent.BODY).orEmpty()).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        }
+        IntentType.CALL_FROM_HISTORY -> {
+            val number = intent.slot("phone") ?: return JarvisResponse("Raqam aniqlanmadi.", intent.type, success = false)
+            launchResponse(device.call(com.jarvis.integrations.ContactHit(intent.slot(ResolvedIntent.CONTACT) ?: number, number)),
+                "Qo'ng'iroq buyrug'i yuborildi.", "Qo'ng'iroq", intent.type)
+        }
+        IntentType.SOCIAL_MESSAGE -> {
+            val item = context.lastNotifications.firstOrNull { it.key == intent.slot("notificationKey") }
+                ?: return JarvisResponse("Tanlangan xabar yo'qolgan. Ro'yxatni qayta so'rang.", intent.type, success = false)
+            device.replyNotification(item, intent.slot(ResolvedIntent.BODY).orEmpty()).let { JarvisResponse(it.text, intent.type, success = it.success) }
+        }
         IntentType.EMAIL_SEND -> {
             val to = intent.slot(ResolvedIntent.TO)!!
             mail.send(to, intent.slot(ResolvedIntent.SUBJECT) ?: "", intent.slot(ResolvedIntent.BODY) ?: "")
             JarvisResponse("Xat $to manziliga yuborildi.", intent.type)
         }
         IntentType.CLEAR_NOTIFICATIONS -> {
-            device.clearNotifications()
-            JarvisResponse("Barcha bildirishnomalar tozalandi.", intent.type)
+            val cleared = device.clearNotifications()
+            JarvisResponse(if (cleared) "Barcha bildirishnomalar tozalandi." else "Bildirishnomalar tozalanmadi. Ruxsat va ulanishni tekshiring.", intent.type, success = cleared)
         }
         IntentType.CALL_CONTACT -> {
             val name = intent.slot(ResolvedIntent.CONTACT).orEmpty()
             val contact = device.findContacts(name).firstOrNull()
                 ?: return JarvisResponse("Kontakt topilmadi.", intent.type, success = false)
-            JarvisResponse(
-                launchReply(device.call(contact), "${contact.name} raqamiga qo'ng'iroq qilinmoqda.", "Qo'ng'iroq"),
-                intent.type
-            )
+            launchResponse(device.call(contact), "${contact.name} uchun qo'ng'iroq buyrug'i yuborildi.", "Qo'ng'iroq", intent.type)
         }
         IntentType.DELETE_TASK -> {
             val title = intent.slot(ResolvedIntent.TITLE).orEmpty()
@@ -124,10 +179,10 @@ class ActionExecutor(
             JarvisResponse("\"${task.title}\" vazifasi o'chirildi.", intent.type)
         }
         IntentType.DELETE_REMINDER -> {
-            val title = intent.slot(ResolvedIntent.TITLE).orEmpty()
-            val reminder = reminders.findActive(title).singleOrNull()
+            val reminder = intent.slot("reminderId")?.toLongOrNull()?.let { reminders.getReminder(it) }
                 ?: return JarvisResponse("Eslatma topilmadi.", intent.type, success = false)
             reminders.cancelReminder(reminder.id)
+            context.selectReminder(reminder)
             JarvisResponse("\"${reminder.title}\" eslatmasi o'chirildi.", intent.type)
         }
         else -> execute(intent, ParsedCommand("", "", "", false))
@@ -181,7 +236,7 @@ class ActionExecutor(
     }
 
     private suspend fun resolveTask(intent: ResolvedIntent, parsed: ParsedCommand): Task? {
-        intent.slot(ResolvedIntent.TITLE)?.let { title -> tasks.findByTitle(title)?.let { return it } }
+        intent.slot(ResolvedIntent.TITLE)?.let { title -> tasks.findByExactTitle(title)?.let { return it } }
         val idx = context.referencedIndex(parsed.body) ?: return null
         val list = context.lastTasks
         if (list.isEmpty()) return null
@@ -208,7 +263,11 @@ class ActionExecutor(
             tasks.updateTask(task.copy(isCompleted = true))
             val remaining = tasks.tasksFor(clock().toLocalDate().toString()).count { !it.isCompleted && it.id != task.id }
             val extra = buildString {
-                if (task.deadline.isNotBlank() && task.deadline <= clock().toLocalDate().toString()) append(" Muddatidan oldin bajarildi!")
+                if (task.deadline.isNotBlank()) {
+                    val today = clock().toLocalDate().toString()
+                    if (task.deadline > today) append(" Muddatidan oldin bajarildi!")
+                    else if (task.deadline < today) append(" Muddatidan kech bajarildi.")
+                }
                 if (remaining == 0) append(" Bugungi barcha ishlar tugadi, barakalla!")
                 else append(" Bugun yana $remaining ta vazifa qoldi.")
             }
@@ -218,7 +277,15 @@ class ActionExecutor(
 
     private suspend fun deleteTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
         val task = resolveTask(intent, parsed)
-            ?: return JarvisResponse("O'chiriladigan vazifani topa olmadim.", intent.type, success = false)
+            ?: intent.slot(ResolvedIntent.TITLE)?.let { title ->
+                val candidates = tasks.search(title).filter { !it.isCompleted }
+                if (candidates.size == 1) {
+                    val candidate = candidates.single()
+                    context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to candidate.title))
+                    return JarvisResponse("\"${candidate.title}\" vazifasini o'chiraymi?", intent.type, expectsReply = true)
+                }
+                null
+            } ?: return JarvisResponse("O'chiriladigan vazifani topa olmadim.", intent.type, success = false)
         context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to task.title))
         return JarvisResponse("\"${task.title}\" vazifasini o'chiraymi?", intent.type, expectsReply = true)
     }
@@ -307,15 +374,26 @@ class ActionExecutor(
     // ---------------- Reminders & habits ----------------
 
     private suspend fun addReminder(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
-        val time = intent.slot(ResolvedIntent.TIME)?.let { TaskPlanner.parseTime(it) }
-            ?: return askFor(intent, ResolvedIntent.TIME, "Qachon eslatay? Masalan: 30 daqiqadan keyin yoki soat 18 da.")
+        if (parsed.needsTimeClarification) {
+            return askFor(intent.copy(slots = intent.slots - ResolvedIntent.TIME), ResolvedIntent.TIME,
+                "Aniq soat nechada eslatay? Masalan: ertalab 06:30 yoki kechqurun 18:30.")
+        }
+        val time = parsed.time ?: intent.slot(ResolvedIntent.TIME)?.let { TaskPlanner.parseTime(it) }
+            ?: return askFor(intent.copy(slots = intent.slots - ResolvedIntent.TIME), ResolvedIntent.TIME, "Qachon eslatay? Masalan: 30 daqiqadan keyin yoki soat 18 da.")
         val now = clock()
         var date = intent.slot(ResolvedIntent.DATE)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: now.toLocalDate()
-        if (LocalDateTime.of(date, time).isBefore(now) && intent.slot(ResolvedIntent.DATE) == null) date = date.plusDays(1)
-        val title = intent.slot(ResolvedIntent.TITLE) ?: "Eslatma"
-        val daily = Regex("""\bhar kuni\b""").containsMatchIn(parsed.body)
-        val at = LocalDateTime.of(date, time)
-        reminders.addReminder(
+        val daily = intent.slot("repeatDaily") == "true" || Regex("""\bhar kuni\b""").containsMatchIn(parsed.body)
+        if (daily && intent.slot(ResolvedIntent.DATE) == null && !LocalDateTime.of(date, time).isAfter(now)) date = date.plusDays(1)
+        val at = parsed.relativeTarget ?: intent.slot("relativeAt")?.let { LocalDateTime.parse(it) } ?: LocalDateTime.of(date, time)
+        if (!at.isAfter(now)) {
+            return askFor(intent.copy(slots = intent.slots - ResolvedIntent.TIME), ResolvedIntent.TIME,
+                "Bu vaqt o'tib ketgan. Qaysi sana va soatda eslatay?")
+        }
+        val title = intent.slot(ResolvedIntent.TITLE) ?: return askFor(
+            intent.copy(slots = intent.slots + (ResolvedIntent.DATE to date.toString()) +
+                (ResolvedIntent.TIME to time.format(HHMM)) + mapOfNotNullRelative(parsed.relativeTarget)),
+            ResolvedIntent.TITLE, "${dayPhrase(date).replaceFirstChar { it.uppercase() }} soat ${time.format(HHMM)} da nimani eslatay?")
+        val saved = reminders.addReminder(
             Reminder(
                 title = title,
                 message = "Jarvis eslatmasi",
@@ -323,50 +401,113 @@ class ActionExecutor(
                 repeatIntervalMinutes = if (daily) 1440 else 0
             )
         )
+        context.rememberReminders(listOf(saved))
         val whenText = if (daily) "har kuni soat ${time.format(HHMM)} da" else "${dayPhrase(date)} soat ${time.format(HHMM)} da"
-        return JarvisResponse("Xo'p, $whenText eslataman: $title.", intent.type)
+        val precisionNotice = if (reminders.canScheduleExactly()) "" else
+            " Aniq vaqtda ishlashi uchun telefon sozlamalarida Jarvis uchun 'Signallar va eslatmalar' ruxsatini yoqing. Hozir eslatma kechikishi mumkin."
+        return JarvisResponse("Xo'p, $whenText eslataman: $title.$precisionNotice", intent.type)
     }
 
-    private suspend fun deleteReminder(intent: ResolvedIntent): JarvisResponse {
-        val query = intent.slot(ResolvedIntent.TITLE)?.trim().orEmpty()
-        if (query.isBlank() || query.equals("eslatma", ignoreCase = true)) {
-            context.pendingIntent = intent.copy(slots = intent.slots - ResolvedIntent.TITLE)
-            context.awaitingSlot = ResolvedIntent.TITLE
-            return JarvisResponse("Qaysi eslatmani o'chiray? Nomi yoki raqamini ayting.", intent.type, expectsReply = true, success = false)
+    private fun mapOfNotNullRelative(at: LocalDateTime?): Map<String, String> =
+        at?.let { mapOf("relativeAt" to it.toString()) }.orEmpty()
+
+    private suspend fun reminderCandidates(intent: ResolvedIntent, parsed: ParsedCommand): List<Reminder> {
+        intent.slot("reminderId")?.toLongOrNull()?.let { return listOfNotNull(reminders.getReminder(it)) }
+        val index = context.referencedIndex(parsed.body)
+        if (index != null) {
+            val explicitOrdinal = Regex("""\b(?:birinchi|ikkinchi|uchinchi|to'rtinchi|beshinchi|oxirgi|\d+\s*-?chi)""").containsMatchIn(parsed.body)
+            val selected = if (explicitOrdinal) context.lastReminders.getOrNull(if (index < 0) context.lastReminders.lastIndex else index)
+                else context.selectedReminder ?: context.lastReminders.singleOrNull()
+            if (selected == null && !explicitOrdinal) return context.lastReminders.mapNotNull { reminders.getReminder(it.id) }.distinctBy { it.id }
+            return listOfNotNull(selected?.let { reminders.getReminder(it.id) })
         }
-        val matches = reminders.findActive(query)
-        return when {
-            matches.isEmpty() -> JarvisResponse("\"$query\" nomli faol eslatma topilmadi.", intent.type, success = false)
-            matches.size > 1 -> {
-                context.rememberReminders(matches)
-                context.pendingIntent = intent.copy(slots = intent.slots - ResolvedIntent.TITLE)
-                context.awaitingSlot = ResolvedIntent.TITLE
-                JarvisResponse(
-                    "Bir nechta mos eslatma topildi: ${matches.mapIndexed { i, r -> "${i + 1}. ${r.title}" }.joinToString(", ")}. Qaysi birini o'chiray?",
-                    intent.type, expectsReply = true, success = false
-                )
-            }
-            else -> {
-                val reminder = matches.single()
-                context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to reminder.title))
-                JarvisResponse("\"${reminder.title}\" eslatmasini o'chiraymi?", intent.type, expectsReply = true)
-            }
+        val query = intent.slot(ResolvedIntent.TITLE).orEmpty()
+        if (query.isBlank()) {
+            context.selectedReminder?.let { selected -> return listOfNotNull(reminders.getReminder(selected.id)) }
+            return reminders.activeReminders()
         }
+        val words = CommandParser.normalize(query).split(' ').filter { it.isNotBlank() }
+        return reminders.allReminders().filter { r -> words.all { it in CommandParser.normalize(r.title) } }
+    }
+
+    private fun askWhichReminder(intent: ResolvedIntent, matches: List<Reminder>): JarvisResponse {
+        context.rememberReminders(matches)
+        return askFor(intent.copy(slots = intent.slots - ResolvedIntent.TITLE - "reminderId"), ResolvedIntent.TITLE,
+            if (matches.isEmpty()) "Qaysi eslatma? Nomini aniqroq ayting." else
+                "Qaysi eslatma? " + matches.mapIndexed { i, r -> "${i + 1}. ${r.title}" }.joinToString(". "))
+    }
+
+    private suspend fun rescheduleReminder(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
+        val matches = reminderCandidates(intent, parsed)
+        if (matches.size != 1) return askWhichReminder(intent, matches)
+        val reminder = matches.single()
+        val selected = intent.copy(slots = intent.slots + ("reminderId" to reminder.id.toString()))
+        context.selectReminder(reminder)
+        val previous = java.time.Instant.ofEpochMilli(reminder.triggerAtMillis).atZone(zone())
+        val date = intent.slot(ResolvedIntent.DATE)?.let { LocalDate.parse(it) } ?: previous.toLocalDate()
+        val time = intent.slot(ResolvedIntent.TIME)?.let { TaskPlanner.parseTime(it) }
+            ?: previous.toLocalTime().takeIf { intent.slot(ResolvedIntent.DATE) != null }
+        if (parsed.needsTimeClarification || time == null) return askFor(
+            selected.copy(slots = selected.slots - ResolvedIntent.TIME), ResolvedIntent.TIME, "Eslatmani aniq qaysi vaqtga o'zgartiray?")
+        val at = parsed.relativeTarget ?: LocalDateTime.of(date, time)
+        if (!at.isAfter(clock())) return askFor(selected.copy(slots = selected.slots - ResolvedIntent.TIME),
+            ResolvedIntent.TIME, "Bu vaqt o'tgan. Qaysi sana va soatga o'zgartiray?")
+        val updated = reminders.rescheduleReminder(reminder, at.atZone(zone()).toInstant().toEpochMilli())
+        context.selectReminder(updated)
+        return JarvisResponse("${reminder.title} eslatmasi ${dayPhrase(date)} soat ${time.format(HHMM)} ga o'zgartirildi.", intent.type)
+    }
+
+    private suspend fun renameReminder(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
+        val matches = reminderCandidates(intent, parsed)
+        if (matches.size != 1) return askWhichReminder(intent, matches)
+        val reminder = matches.single()
+        val title = intent.slot(ResolvedIntent.CONTENT)?.trim()?.replaceFirstChar { it.uppercase() }
+            ?: return askFor(intent.copy(slots = intent.slots + ("reminderId" to reminder.id.toString())), ResolvedIntent.CONTENT,
+                "${reminder.title} eslatmasining yangi nomi qanday bo'lsin?")
+        val updated = reminders.renameReminder(reminder, title)
+        context.selectReminder(updated)
+        return JarvisResponse("Eslatma nomi \"$title\" deb o'zgartirildi.", intent.type)
+    }
+
+    private suspend fun deleteReminder(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
+        val matches = reminderCandidates(intent, parsed)
+        if (matches.size != 1) return askWhichReminder(intent, matches)
+        val reminder = matches.single()
+        context.selectReminder(reminder)
+        context.pendingConfirmation = intent.copy(slots = intent.slots + ("reminderId" to reminder.id.toString()))
+        return JarvisResponse("\"${reminder.title}\" eslatmasini o'chiraymi?", intent.type, expectsReply = true)
+    }
+
+    private fun reminderLine(reminder: Reminder): String {
+        val at = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(reminder.triggerAtMillis), zone())
+        val state = if (!reminder.isActive || at.isBefore(clock())) " — vaqti o'tgan yoki faol emas" else ""
+        return "${reminder.title}, ${dayPhrase(at.toLocalDate())} soat ${at.toLocalTime().format(HHMM)}$state"
     }
 
     private suspend fun listReminders(intent: ResolvedIntent): JarvisResponse {
-        val active = reminders.activeReminders()
-        context.rememberReminders(active)
-        if (active.isEmpty()) return JarvisResponse("Faol eslatmalar yo'q.", intent.type)
-        val lines = active.take(10).mapIndexed { index, reminder ->
-            val at = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(reminder.triggerAtMillis), zone())
-            "${index + 1}. ${reminder.title}, ${at.toLocalDate()} soat ${at.toLocalTime().format(HHMM)}"
-        }
-        return JarvisResponse(
-            "Sizda ${active.size} ta faol eslatma bor. " + lines.joinToString(". ") + ".",
-            intent.type,
-            card = ResponseCard("Faol eslatmalar", lines)
-        )
+        val date = intent.slot(ResolvedIntent.DATE)?.let { LocalDate.parse(it) }
+        val list = if (date == null) reminders.activeReminders() else reminders.onDate(date, zone())
+        context.rememberReminders(list)
+        val label = date?.let { dayPhrase(it).replaceFirstChar { c -> c.uppercase() } } ?: "Faol"
+        if (list.isEmpty()) return JarvisResponse("$label eslatmalar yo'q.", intent.type)
+        val lines = list.mapIndexed { index, reminder -> "${index + 1}. ${reminderLine(reminder)}" }
+        return JarvisResponse("$label ${list.size} ta eslatma bor. " + lines.joinToString(". "), intent.type,
+            card = ResponseCard("$label eslatmalar", lines))
+    }
+
+    private suspend fun nextReminder(intent: ResolvedIntent): JarvisResponse {
+        val now = clock().atZone(zone()).toInstant().toEpochMilli()
+        val cursor = context.selectedReminder.takeIf { intent.slot(ResolvedIntent.CONTENT) == "advance" }
+        val list = reminders.activeReminders().mapNotNull { r ->
+            val after = if (cursor == null) now else maxOf(now,
+                cursor.triggerAtMillis - if (r.id > cursor.id) 1 else 0)
+            ReminderEngine.nextTrigger(r, after)?.let { r.copy(triggerAtMillis = it) }
+        }.sortedWith(compareBy<Reminder> { it.triggerAtMillis }.thenBy { it.id })
+        val next = list.firstOrNull() ?: return JarvisResponse("Boshqa yaqinlashayotgan eslatma yo'q.", intent.type)
+        context.rememberReminders(list)
+        context.selectReminder(next)
+        return JarvisResponse("Keyingi eslatma: ${reminderLine(next)}.", intent.type,
+            card = ResponseCard("Keyingi eslatma", listOf(reminderLine(next))))
     }
 
     private suspend fun addHabit(intent: ResolvedIntent): JarvisResponse {
@@ -431,17 +572,20 @@ class ActionExecutor(
 
     // ---------------- Phone ----------------
 
-    private fun launchReply(result: ActivityLauncher.Result, ok: String, what: String) = when (result) {
-        ActivityLauncher.Result.STARTED -> ok
-        ActivityLauncher.Result.NOTIFIED -> "$what tayyor — bildirishnomani bosing."
-        ActivityLauncher.Result.NO_APP -> "Kechirasiz, bu amal uchun ilova topilmadi."
+    private fun launchResponse(result: ActivityLauncher.Result, ok: String, what: String, type: IntentType): JarvisResponse {
+        val text = when (result) {
+            ActivityLauncher.Result.STARTED -> ok
+            ActivityLauncher.Result.NOTIFIED -> "$what tayyor — bildirishnomani bosing."
+            ActivityLauncher.Result.NO_APP -> "Kechirasiz, bu amal uchun ilova topilmadi."
+            ActivityLauncher.Result.DIALER -> "Raqam terish oynasi ochildi. Qo'ng'iroqni boshlash uchun telefon tugmasini bosing."
+        }
+        return JarvisResponse(text, type, success = result == ActivityLauncher.Result.STARTED)
     }
 
     private fun openCamera(intent: ResolvedIntent): JarvisResponse {
         val video = intent.slot(ResolvedIntent.VIDEO) == "true"
         val r = device.openCamera(video)
-        return JarvisResponse(launchReply(r, if (video) "Video kamera ochildi." else "Kamera ochildi.", "Kamera"), intent.type,
-            success = r != ActivityLauncher.Result.NO_APP)
+        return launchResponse(r, if (video) "Video kamerani ochish buyrug'i yuborildi." else "Kamerani ochish buyrug'i yuborildi.", "Kamera", intent.type)
     }
 
     private fun findFile(intent: ResolvedIntent): JarvisResponse {
@@ -456,7 +600,7 @@ class ActionExecutor(
             hits.isEmpty() -> JarvisResponse("${kind.replaceFirstChar { it.uppercase() }} topilmadi${if (query.isNotBlank()) ": \"$query\"" else ""}.", intent.type, success = false)
             hits.size == 1 -> {
                 val r = device.openFile(hits[0])
-                JarvisResponse(launchReply(r, "\"${hits[0].name}\" ochildi.", hits[0].name), intent.type)
+                launchResponse(r, "\"${hits[0].name}\" faylini ochish buyrug'i yuborildi.", hits[0].name, intent.type)
             }
             else -> JarvisResponse(
                 "${hits.size} ta $kind topildi. Eng yangisi: ${hits[0].name}. Qaysi birini ochay?", intent.type,
@@ -469,7 +613,7 @@ class ActionExecutor(
         val list = context.lastFiles
         val hit = (if (index < 0) list.lastOrNull() else list.getOrNull(index))
             ?: return JarvisResponse("Bunday raqamli fayl yo'q.", IntentType.FIND_FILE, success = false)
-        return JarvisResponse(launchReply(device.openFile(hit), "\"${hit.name}\" ochildi.", hit.name), IntentType.FIND_FILE)
+        return launchResponse(device.openFile(hit), "\"${hit.name}\" faylini ochish buyrug'i yuborildi.", hit.name, IntentType.FIND_FILE)
     }
 
     private fun callContact(intent: ResolvedIntent): JarvisResponse {
@@ -482,8 +626,7 @@ class ActionExecutor(
         return when (found.size) {
             0 -> JarvisResponse("\"$name\" ismli kontakt topilmadi.", intent.type, success = false)
             1 -> {
-                context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.CONTACT to found[0].name))
-                JarvisResponse("${found[0].name} raqamiga qo'ng'iroq qilaymi?", intent.type, expectsReply = true)
+                launchResponse(device.call(found[0]), "${found[0].name} ga qo'ng'iroq qilinyapti.", "Qo'ng'iroq", intent.type)
             }
             else -> JarvisResponse(
                 "${found.size} ta kontakt topildi: ${found.joinToString(", ") { it.name }}. Qaysi biriga qo'ng'iroq qilay?", intent.type,
@@ -496,16 +639,111 @@ class ActionExecutor(
         val list = context.lastContacts
         val c = (if (index < 0) list.lastOrNull() else list.getOrNull(index))
             ?: return JarvisResponse("Bunday raqamli kontakt yo'q.", IntentType.CALL_CONTACT, success = false)
-        return JarvisResponse(launchReply(device.call(c), "${c.name} raqamiga qo'ng'iroq qilinmoqda.", "Qo'ng'iroq"), IntentType.CALL_CONTACT)
+        return launchResponse(device.call(c), "${c.name} uchun qo'ng'iroq buyrug'i yuborildi.", "Qo'ng'iroq", IntentType.CALL_CONTACT)
+    }
+
+    private fun messageMatchesApp(item: com.jarvis.integrations.NotificationItem, app: String): Boolean = when (app) {
+        "telegram" -> item.packageName in setOf("org.telegram.messenger", "org.telegram.messenger.web", "org.telegram.messenger.beta", "org.thunderdog.challegram")
+        "instagram" -> item.packageName == "com.instagram.android"
+        else -> true
     }
 
     private fun readNotifications(intent: ResolvedIntent): JarvisResponse {
-        if (!device.notificationsAvailable()) {
-            return JarvisResponse("Bildirishnomalarni o'qish uchun Sozlamalarda \"Bildirishnomalarni o'qish\" ruxsatini yoqing.", intent.type, success = false)
+        if (!device.notificationsAvailable()) return JarvisResponse("Bildirishnomalarni o'qish ruxsatini Sozlamalarda yoqing.", intent.type, success = false)
+        val limit = intent.slot("count")?.toIntOrNull()?.coerceIn(1, 50) ?: 10
+        val items = device.recentNotifications(Int.MAX_VALUE).filter { messageMatchesApp(it, intent.slot("app").orEmpty()) }.take(limit)
+        context.rememberNotifications(items)
+        val label = intent.slot("app")?.replaceFirstChar { it.uppercase() } ?: "Ilovalar"
+        return JarvisResponse("$label faol bildirishnomalari. " + com.jarvis.integrations.Notifications.describe(items), intent.type,
+            card = if (items.isEmpty()) null else ResponseCard("Faol bildirishnomalar", items.mapIndexed { i, n -> "${i + 1}. ${n.appName}: ${n.title} ${n.text}".trim() }))
+    }
+
+    private fun readCallHistory(intent: ResolvedIntent): JarvisResponse {
+        if (!device.callHistoryAvailable()) return JarvisResponse("Sozlamalar → Ruxsatlar → Qo'ng'iroqlar tarixi ruxsatini bering.", intent.type, success = false)
+        val limit = intent.slot("count")?.toIntOrNull()?.coerceIn(1, 50) ?: 10
+        val calls = device.recentCalls(limit)
+        context.rememberCalls(calls)
+        if (calls.isEmpty()) return JarvisResponse("Qo'ng'iroqlar tarixi bo'sh.", intent.type)
+        val format = java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm")
+        val lines = calls.mapIndexed { i, c -> "${i + 1}. ${c.name}, ${c.kind}, ${java.time.Instant.ofEpochMilli(c.timeMillis).atZone(zone()).format(format)}" }
+        return JarvisResponse("Oxirgi ${calls.size} ta qo'ng'iroq: " + lines.joinToString(". "), intent.type, card = ResponseCard("Oxirgi qo'ng'iroqlar", lines))
+    }
+
+    private fun callFromHistory(intent: ResolvedIntent): JarvisResponse {
+        if (!device.callHistoryAvailable()) return JarvisResponse("Qo'ng'iroqlar tarixi ruxsatini yoqing.", intent.type, success = false)
+        val fresh = intent.slot("count") != null || intent.slot(ResolvedIntent.QUERY) == "latest"
+        val calls = if (fresh) device.recentCalls(intent.slot("count")?.toIntOrNull()?.coerceIn(1, 50) ?: 10)
+            else context.lastCalls
+        if (calls.isEmpty()) return JarvisResponse("Avval oxirgi qo'ng'iroqlarni ko'rsatishni so'rang yoki tarix bo'sh.", intent.type, success = false)
+        context.rememberCalls(calls)
+        val index = intent.slot("index")?.toIntOrNull()?.minus(1) ?: 0
+        val call = calls.getOrNull(index) ?: return JarvisResponse("Ro'yxatda bunday raqamli qo'ng'iroq yo'q.", intent.type, success = false)
+        if (!call.callable || com.jarvis.integrations.PhoneCommunications.normalizeNumber(call.number) == null) return JarvisResponse("Bu yozuvning raqami yopiq yoki noto'g'ri; qo'ng'iroq qilib bo'lmaydi.", intent.type, success = false)
+        return launchResponse(device.call(com.jarvis.integrations.ContactHit(call.name, call.number)), "${call.name} ga qo'ng'iroq qilinyapti.", "Qo'ng'iroq", intent.type)
+    }
+
+    private fun composeSms(intent: ResolvedIntent): JarvisResponse {
+        var number = intent.slot("phone")
+        if (number == null && intent.slot("index") != null) {
+            if (!device.callHistoryAvailable()) return JarvisResponse("Qo'ng'iroqlar tarixi ruxsatini yoqing.", intent.type, success = false)
+            val calls = if (intent.slot("count") != null) device.recentCalls(intent.slot("count")!!.toInt().coerceIn(1, 50)) else context.lastCalls
+            val row = calls.getOrNull(intent.slot("index")!!.toInt() - 1)
+                ?: return JarvisResponse("Qo'ng'iroqlar ro'yxatidagi raqam topilmadi.", intent.type, success = false)
+            if (!row.callable) return JarvisResponse("Tanlangan raqam yopiq.", intent.type, success = false)
+            number = row.number
         }
-        val items = device.recentNotifications()
-        return JarvisResponse(com.jarvis.integrations.Notifications.describe(items), intent.type,
-            card = if (items.isEmpty()) null else ResponseCard("Bildirishnomalar", items.map { "${it.appName}: ${it.title} ${it.text}".trim() }))
+        if (number == null) {
+            val to = intent.slot(ResolvedIntent.TO) ?: return askFor(intent, ResolvedIntent.TO, "SMS kimga? Kontakt ismini yoki telefon raqamini ayting.")
+            number = com.jarvis.integrations.PhoneCommunications.normalizeNumber(to)
+            if (number == null) {
+                if (!device.hasContactsPermission()) return JarvisResponse("Kontaktlar ruxsatini yoqing yoki raqamni ayting.", intent.type, success = false)
+                val contacts = device.findContacts(to)
+                if (contacts.size != 1) {
+                    context.rememberContacts(contacts)
+                    return askFor(intent, "phone", if (contacts.isEmpty()) "Telefon raqamini ayting." else
+                        "Qaysi kontakt? " + contacts.mapIndexed { i, c -> "${i + 1}. ${c.name}: ${c.phone}" }.joinToString(". "))
+                }
+                number = contacts.single().phone
+            }
+        }
+        val body = intent.slot(ResolvedIntent.BODY) ?: return askFor(intent.copy(slots = intent.slots + ("phone" to number)), ResolvedIntent.BODY, "SMS matnini ayting.")
+        context.pendingConfirmation = intent.copy(slots = intent.slots + mapOf("phone" to number, ResolvedIntent.BODY to body))
+        return JarvisResponse("SMS matni: $body. Shu matnni tayyorlab yuboraymi?", intent.type, expectsReply = true)
+    }
+
+    private fun addContact(intent: ResolvedIntent): JarvisResponse {
+        val name = intent.slot(ResolvedIntent.CONTACT) ?: return askFor(intent, ResolvedIntent.CONTACT, "Yangi kontaktning ismi qanday?")
+        val number = intent.slot("phone") ?: return askFor(intent, "phone", "Telefon raqamini ayting.")
+        return device.addContact(name, number).let { JarvisResponse(it.text, intent.type, success = it.success) }
+    }
+
+    private fun composeSocialMessage(intent: ResolvedIntent): JarvisResponse {
+        val app = intent.slot("app").orEmpty()
+        val body = intent.slot(ResolvedIntent.BODY) ?: return askFor(intent, ResolvedIntent.BODY, "Xabar matnini ayting.")
+        val index = intent.slot("index")?.toIntOrNull()?.minus(1)
+        val snapshot = context.lastNotifications.filter { messageMatchesApp(it, app) }
+        val to = intent.slot(ResolvedIntent.TO)
+        val candidates = when {
+            index != null -> listOfNotNull(snapshot.getOrNull(index))
+            to != null && device.notificationsAvailable() -> device.recentNotifications(Int.MAX_VALUE).filter {
+                messageMatchesApp(it, app) && it.title.contains(to, ignoreCase = true)
+            }
+            else -> snapshot
+        }
+        if (candidates.size == 1) {
+            val item = candidates.single()
+            if (!item.canReply) return JarvisResponse("Bu bildirishnomada tezkor javob yo'q. Ilovadagi chatni ochib, 'matn yoz: ...' buyrug'idan foydalaning.", intent.type, success = false)
+            context.rememberNotifications(listOf(item))
+            context.pendingConfirmation = intent.copy(slots = intent.slots + ("notificationKey" to item.key))
+            return JarvisResponse("${item.appName}: ${item.title} ga \"$body\" deb javob yuboraymi?", intent.type, expectsReply = true)
+        }
+        if (index != null) return JarvisResponse("Xabarlar ro'yxatida bunday tartib raqami yo'q. Ro'yxatni qayta so'rang.", intent.type, success = false)
+        if (candidates.size > 1) {
+            context.rememberNotifications(candidates)
+            return askFor(intent, "index", "Qaysi xabarga? " + candidates.mapIndexed { i, n -> "${i + 1}. ${n.title}" }.joinToString(". "))
+        }
+        if (app.isBlank()) return askFor(intent, "app", "Telegram yoki Instagram'da yozaymi?")
+        return device.socialDraft(app, body).let { JarvisResponse(it.text, intent.type, success = it.success) }
     }
 
     private fun clearNotifications(intent: ResolvedIntent): JarvisResponse {
@@ -612,6 +850,12 @@ class ActionExecutor(
         private const val HELP_TEXT = "Men vazifa qo'shaman, kuningizni rejalashtiraman, eslataman, eslab qolaman, " +
             "kamerani ochaman, fayl topaman, qo'ng'iroq qilaman, taqvim va Gmail bilan ishlayman."
         val HELP_EXAMPLES = listOf(
+            "Oxirgi 10 ta qo'ng'iroqni ayt",
+            "7-siga telefon qil",
+            "Ali ga SMS yoz: Salom!",
+            "Telegramdagi oxirgi 10 ta xabarni ayt",
+            "7-siga javob yoz: Rahmat!",
+            "Bluetoothni yoq",
             "Jarvis ertaga soat 9 da uchrashuv qo'sh",
             "Jarvis bugungi rejani tuz",
             "Jarvis tugallanmagan ishlarimni ko'rsat",
@@ -625,6 +869,12 @@ class ActionExecutor(
             "Jarvis yangi xatlarni o'qi",
             "Jarvis hisobotni jumagacha tayyorla",
             "Jarvis ish odatlarim qanday?",
+            "Jarvis bugungi jami eslatmalarni ayt",
+            "Jarvis keyingi eslatmam qaysi? / undan keyingisi qaysi?",
+            "Shu eslatmaning nomini dars deb o'zgartir",
+            "Shuni kunini ertaga o'zgartir",
+            "Jarvis shaxmat puzzle yech / bot bilan shaxmat o'yna",
+            "Jarvis shaxmat partiyasini tahlil qil",
             "Jarvis boshla / Jarvis tugat"
         )
     }

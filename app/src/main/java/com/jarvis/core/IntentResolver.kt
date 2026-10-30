@@ -3,6 +3,18 @@ package com.jarvis.core
 import java.time.format.DateTimeFormatter
 
 enum class IntentType {
+    READ_CALL_HISTORY,
+    CALL_FROM_HISTORY,
+    COMPOSE_SMS,
+    SOCIAL_MESSAGE,
+    ADD_CONTACT,
+    PHONE_SETTING,
+    PAUSE_MICROPHONE,
+    RESUME_MICROPHONE,
+    OPEN_APP,
+    CONTROL_PHONE,
+    PLAY_GAME,
+    ANALYZE_CHESS,
     WAKE,
     START_SESSION,
     STOP_SESSION,
@@ -16,6 +28,9 @@ enum class IntentType {
     SEARCH_TASKS,
     ADD_REMINDER,
     DELETE_REMINDER,
+    RESCHEDULE_REMINDER,
+    RENAME_REMINDER,
+    NEXT_REMINDER,
     LIST_REMINDERS,
     ADD_HABIT,
     REMEMBER,
@@ -79,6 +94,7 @@ class IntentResolver {
     fun resolve(cmd: ParsedCommand): ResolvedIntent {
         val t = cmd.body
         val slots = LinkedHashMap<String, String>()
+        if (Regex("""\bhar kuni\b""").containsMatchIn(t)) slots["repeatDaily"] = "true"
         cmd.date?.let { slots[ResolvedIntent.DATE] = it.toString() }
         cmd.time?.let { slots[ResolvedIntent.TIME] = it.format(HHMM) }
         cmd.durationMinutes?.let { slots[ResolvedIntent.DURATION] = it.toString() }
@@ -91,6 +107,63 @@ class IntentResolver {
         if (STOP_RE.matches(t)) return hit(IntentType.STOP_SESSION, 1f)
         if (START_RE.matches(t)) return hit(IntentType.START_SESSION, 1f)
 
+        val head = t.substringBefore(':')
+        val callVerb = Regex("""\b(?:telefon\s+qil|qo'ng'iroq\s+qil|bog'lan)\w*""").containsMatchIn(head)
+        val callNoun = Regex("""\bqo'ng'iroq\w*""").containsMatchIn(head)
+        val ordinal = Regex("""\b(\d{1,2})\s*-?\s*(?:chi\w*|si\w*)\b""").find(head)?.groupValues?.get(1)
+        val count = Regex("""(?:\boxirgi\s+)?(\d{1,2})\s*(?:ta|tadan|tasi|sini|siga)\b""").find(head)?.groupValues?.get(1)
+        val app = when { head.contains("telegram") -> "telegram"; head.contains("instagram") -> "instagram"; else -> "" }
+        val originalBody = cmd.original.substringAfter(':', "").trim()
+        fun recipient(): String {
+            Regex("""\+?\d[\d ()-]{5,20}\d""").find(cmd.original.substringBefore(':'))?.let { return it.value.trim() }
+            return head.replace(Regex("""\b(?:telegram\w*|instagram\w*|sms|xabar\w*|javob\w*|yoz\w*|yubor\w*|tayyorla\w*|menga|iltimos|unga|shunga|oxirgi)\b"""), " ")
+                .replace(Regex("""\s+"""), " ").trim().removeSuffix("ga").trim()
+        }
+        if (Regex("""\b(?:bluetooth|bluethooh|blyutuz|blutus)\w*""").containsMatchIn(head) &&
+            Regex("""\b(?:yoq|o'chir)\w*""").containsMatchIn(head)) {
+            return hit(IntentType.PHONE_SETTING, 1f, ResolvedIntent.CONTENT to if (head.contains("o'chir")) "BLUETOOTH_OFF" else "BLUETOOTH_ON")
+        }
+        if (Regex("""\b(?:telefonni|qurilmani)\s+o'chir\w*""").containsMatchIn(head)) return hit(IntentType.PHONE_SETTING, 1f, ResolvedIntent.CONTENT to "POWER")
+        if (Regex("""\bdinamik\w*\b""").containsMatchIn(head) && Regex("""\b(?:yoq|o'chir)\w*""").containsMatchIn(head)) {
+            return hit(IntentType.PHONE_SETTING, 1f, ResolvedIntent.CONTENT to if (head.contains("o'chir")) "SPEAKER_OFF" else "SPEAKER_ON")
+        }
+        if (Regex("""\bmikrofon\w*""").containsMatchIn(head) && Regex("""\b(?:yoq|o'chir)\w*""").containsMatchIn(head)) {
+            if (callNoun) return hit(IntentType.PHONE_SETTING, 1f, ResolvedIntent.CONTENT to if (head.contains("o'chir")) "CALL_MIC_OFF" else "CALL_MIC_ON")
+            return hit(if (head.contains("o'chir")) IntentType.PAUSE_MICROPHONE else IntentType.RESUME_MICROPHONE, 1f)
+        }
+        if (head.contains("yangi") && callNoun && head.contains("qo'sh"))
+            return hit(IntentType.PHONE_SETTING, 1f, ResolvedIntent.CONTENT to "ADD_CALL")
+        if (Regex("""\bkontakt\w*""").containsMatchIn(head) && Regex("""\b(?:qo'sh|saqla)\w*""").containsMatchIn(head)) return hit(IntentType.ADD_CONTACT, 1f)
+        if (Regex("""\bsms\b""").containsMatchIn(head) && Regex("""\b(?:yoz|yubor|tayyorla)\w*""").containsMatchIn(head)) {
+            return hit(IntentType.COMPOSE_SMS, 1f, ResolvedIntent.TO to if (ordinal == null) recipient() else "",
+                ResolvedIntent.BODY to originalBody, "index" to ordinal.orEmpty(), "count" to count.orEmpty())
+        }
+        if ((app.isNotBlank() || head.contains("javob")) && Regex("""\b(?:yoz|yubor|javob)\w*""").containsMatchIn(head)) {
+            return hit(IntentType.SOCIAL_MESSAGE, 1f, "app" to app, ResolvedIntent.TO to if (ordinal == null) recipient() else "",
+                ResolvedIntent.BODY to originalBody, "index" to ordinal.orEmpty())
+        }
+        if (callVerb && (head.contains("oxirgi") || ordinal != null)) return hit(IntentType.CALL_FROM_HISTORY, 1f,
+            "index" to ordinal.orEmpty(), "count" to count.orEmpty(), ResolvedIntent.QUERY to if (ordinal == null) "latest" else "")
+        if (callNoun && (head.contains("oxirgi") || head.contains("tarix"))) return hit(IntentType.READ_CALL_HISTORY, 1f, "count" to count.orEmpty())
+        if (app.isNotBlank() && Regex("""\b(?:xabar|chat|yozishma|bildirishnoma)\w*""").containsMatchIn(head)) {
+            return hit(IntentType.READ_NOTIFICATIONS, 1f, "app" to app, "count" to count.orEmpty())
+        }
+
+        if (Regex("""\b(?:shaxmat|pgn|partiya\w*)\b""").containsMatchIn(t) && t.contains("tahlil")) {
+            return hit(IntentType.ANALYZE_CHESS, 1f, ResolvedIntent.CONTENT to cmd.original.substringAfter(':', "").trim())
+        }
+        if (t in setOf("ekranni o'qi", "orqaga qayt", "bosh ekranga qayt", "pastga sur", "yuqoriga sur", "ilovadan chiq", "ilovani yop", "dasturdan chiq") ||
+            Regex("""^.+ tugmasini bos$|^matn yoz:\s*.+$""").matches(t)) {
+            return hit(IntentType.CONTROL_PHONE, 1f, ResolvedIntent.CONTENT to
+                if (t.startsWith("matn yoz:")) "matn yoz: " + cmd.original.substringAfter(':').trim() else cmd.body)
+        }
+        if (Regex("""\b(?:o'yin\w*|shaxmat\w*|chess|lichess|puzzle|boshqotirma\w*)\b""").containsMatchIn(t) &&
+            Regex("""\b(?:o'yna\w*|yech\w*)\b""").containsMatchIn(t)) {
+            return hit(IntentType.PLAY_GAME, 1f, ResolvedIntent.CONTENT to cmd.body)
+        }
+        Regex("""^(.+?)\s+(?:ilovasini|ilovasiga|ilovani|dasturini)\s+(?:och|ishga tushir|kir)$""").matchEntire(t)?.let { m ->
+            return hit(IntentType.OPEN_APP, 1f, ResolvedIntent.TITLE to m.groupValues[1])
+        }
         if (PATTERNS_RE.containsMatchIn(t)) return hit(IntentType.WORK_PATTERNS, 0.9f)
         if (FORGET_RE.containsMatchIn(t)) {
             return hit(IntentType.FORGET, 0.85f, ResolvedIntent.QUERY to strip(cmd.remainder, FORGET_RE, FILLER_RE))
@@ -151,11 +224,32 @@ class IntentResolver {
             } else hit(IntentType.CALENDAR_READ, 0.9f)
         }
 
-        if (REMINDER_LIST_RE.containsMatchIn(t)) return hit(IntentType.LIST_REMINDERS, 0.98f)
-        // Check deletion before creation so delete commands never create a reminder.
-        if (REMINDER_RE.containsMatchIn(t) && DELETE_RE.containsMatchIn(t)) {
+        Regex("""^(.+?)(?:\s+(?:ilovasini|ilovasiga|ilovani|dasturini))?\s+(?:och|ishga tushir|kir)$""").matchEntire(t)?.let { m ->
+            return hit(IntentType.OPEN_APP, 0.95f, ResolvedIntent.TITLE to m.groupValues[1])
+        }
+        val advanceReminder = Regex("""^(?:undan keyin\w*|yana keyingi\w*|keyingisi)\b""").containsMatchIn(t)
+        if (advanceReminder || REMINDER_RE.containsMatchIn(t) &&
+            Regex("""\b(?:keyingi|navbatdagi|yaqin|kutyapti|kutmoqda)\w*|\bhozir\s+qaysi""").containsMatchIn(t)) {
+            return hit(IntentType.NEXT_REMINDER, 0.99f, ResolvedIntent.CONTENT to if (advanceReminder) "advance" else "first")
+        }
+        val rename = Regex("""^(.*?)\bnomini\s*(.*?)\s*(?:deb\s+)?(?:o'zgartir|almashtir|qo'y|nomla)\w*$""").matchEntire(t)
+        if (rename != null && (rename.groupValues[1].isBlank() || REMINDER_RE.containsMatchIn(rename.groupValues[1]) ||
+                REMINDER_REFERENCE_RE.containsMatchIn(rename.groupValues[1]))) {
+            return hit(IntentType.RENAME_REMINDER, 0.99f,
+                ResolvedIntent.TITLE to titleFrom(rename.groupValues[1], REMINDER_RE, REMINDER_REFERENCE_RE),
+                ResolvedIntent.CONTENT to rename.groupValues[2].removeSuffix(" deb").trim())
+        }
+        if (REMINDER_LIST_RE.containsMatchIn(t) || REMINDER_RE.containsMatchIn(t) &&
+            Regex("""\b(?:nechta|jami|barcha|hamma)\b""").containsMatchIn(t) ||
+            Regex("""(?:(?:bugungi|ertangi|faol)\s+)*eslatmalar\w*""").matches(t)) return hit(IntentType.LIST_REMINDERS, 0.98f)
+        if ((REMINDER_RE.containsMatchIn(t) || REMINDER_REFERENCE_RE.containsMatchIn(t)) && DELETE_RE.containsMatchIn(t)) {
             return hit(IntentType.DELETE_REMINDER, 0.98f,
-                ResolvedIntent.TITLE to titleFrom(cmd.remainder, REMINDER_RE, DELETE_RE))
+                ResolvedIntent.TITLE to titleFrom(cmd.remainder, REMINDER_RE, DELETE_RE, REMINDER_REFERENCE_RE))
+        }
+        if (RESCHEDULE_RE.containsMatchIn(t) && (REMINDER_RE.containsMatchIn(t) || REMINDER_REFERENCE_RE.containsMatchIn(t))) {
+            return hit(IntentType.RESCHEDULE_REMINDER, 0.98f,
+                ResolvedIntent.TITLE to titleFrom(cmd.remainder, REMINDER_RE, RESCHEDULE_RE, REMINDER_REFERENCE_RE,
+                    Regex("""\b(?:vaqtini|vaqti|kunini|sanasini|sanasi)\b""")))
         }
         if (REMINDER_RE.containsMatchIn(t)) {
             return hit(IntentType.ADD_REMINDER, if (cmd.time != null) 0.95f else 0.8f,
@@ -249,7 +343,7 @@ class IntentResolver {
     companion object {
         private val HHMM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-        private val STOP_RE = Regex("""(?:tugat|to'xta|to'xtat|bas|yetarli|xayr|stop|o'chir o'zingni|jim bo'l)(?:ing|gin|ish)?""")
+        private val STOP_RE = Regex("""(?:tugat|to'xta|to'xtat|bas|yetarli|xayr|stop|o'chir o'zingni|jim bo'l)(?:ing|gin|ish)?(?:\s+jarvis)?""")
         private val START_RE = Regex("""(?:boshla|boshlaymiz|boshlagin|ishga tush|uyg'on|tayyormisan|eshit|eshityapsanmi|labbay)""")
 
         private val PATTERNS_RE = Regex("""\b(?:ish odatlari\w*|ish uslub\w*|qachon samarali|qaysi vaqtda samarali|samaradorlig\w*|unumdorlig\w*|ish tahlil\w*)""")
@@ -271,7 +365,7 @@ class IntentResolver {
             "pptx" to "ppt", "ppt" to "ppt", "taqdimot" to "ppt", "prezentatsiya" to "ppt", "txt" to "txt"
         )
         private val CALL_RE = Regex("""\b(?:bog'lan\w*|qo'ng'iroq\w*(?: qil\w*)?|telefon qil\w*|tel qil\w*|chaqir\w*|zvonok\w*|qo'ng'iroq)""")
-        private val DATIVE_RE = Regex("""(?:ga|ka|qa|gа)$""")
+        private val DATIVE_RE = Regex("""(?:ga|ka|qa|ga)$""")
         private val NOTIFICATION_RE = Regex("""\b(?:bildirishnoma\w*|xabarnoma\w*|notifikatsiya\w*|notification\w*|bildirish)""")
         private val CLEAR_RE = Regex("""\b(?:tozala|o'chir|yop|tashla)\w*""")
         private val EMAIL_RE = Regex("""\b(?:email\w*|e-mail\w*|pochta\w*|gmail\w*|xat\b|xatlar\w*|xatni|xatga|maktub\w*|xat yoz\w*|xat yubor\w*)""")
@@ -283,6 +377,7 @@ class IntentResolver {
         private val RECIPIENT_RE = Regex("""^(?:\w+\s+){0,2}?(\w+?)(?:ga|ka|qa)\s+(?:xat|email|pochta)""")
         private val CALENDAR_RE = Regex("""\b(?:taqvim\w*|kalendar\w*|calendar\w*|tadbir\w*)""")
 
+        private val REMINDER_REFERENCE_RE = Regex("""\b(?:shuni|shuning|uni|uning|buni|buning|shu|bu|o'shani|o'shaning|birinchisi\w*|ikkinchisi\w*|uchinchisi\w*)\b""")
         private val REMINDER_RE = Regex("""\b(?:eslat\w*|budilnik\w*|signal qo'y\w*)""")
         private val REMINDER_LIST_RE = Regex("""\b(?:eslatmalar?\w*|budilniklar\w*)\b.*\b(?:ko'rsat|ayt|sanab|ro'yxat|bor)\w*""")
         private val HABIT_RE = Regex("""\b(?:odat\w*)""")

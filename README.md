@@ -11,6 +11,8 @@ Gmail, the camera, files, contacts and notifications.
 
 | Area | What it does |
 |---|---|
+| **Reminder conversations** | Rename, change day/time, delete with confirmation, list today's schedule, and ask for the next reminder followed by "undan keyingisi". Recurring schedules are included. See [docs/REMINDERS.md](docs/REMINDERS.md). |
+| **Phone and chess practice** | Accessibility controls apps with explicit permission. Chess puzzle and bot modes use Gemini screen analysis; completed PGN games can be reviewed in Settings. See [docs/CHESS_PRACTICE.md](docs/CHESS_PRACTICE.md). |
 | **Offline wake word** | The single word **"Jarvis"** works offline without any key: a grammar-restricted **Vosk** keyword spotter (English small model, downloaded automatically on Wi-Fi). Until that model is present, the bundled **openWakeWord "Hey Jarvis"** ONNX model is used. With a Picovoice AccessKey it uses **Porcupine's built-in "Jarvis"** keyword instead. All engines decode audio only while there is speech energy, which saves battery. |
 | **24/7 service** | Microphone foreground service with a persistent control notification (Speak / Pause / Off). It keeps running when the app is closed or the screen is locked, restarts after reboot, and can pause in battery saver or on the lock screen. |
 | **Agent core** | `CommandParser` handles Uzbek dates, times and durations (Latin or Cyrillic), `IntentResolver` recognises 30 intents offline, `ActionExecutor` runs them, and `JarvisEngine` orchestrates. If the offline match is weak and a Gemini key is set, Gemini **function calling** chooses the tool. Follow-up questions, "yes/no" confirmations and "open the second one" all work. |
@@ -100,7 +102,7 @@ Mic ─▶ WakeWordEngine ("Jarvis") ─▶ VoiceSessionManager ─▶ SpeechToT
              TextToSpeech ◀── reply ◀── ActionExecutor ◀── IntentResolver / GeminiAgent
 ```
 
-Database (Room v4, SQLCipher): `tasks`, `habits`, `reminders`, `memories`, `conversations`, `user_settings`.
+Database (Room v5, SQLCipher): `tasks`, `habits`, `reminders`, `memories`, `conversations`, `user_settings`.
 Existing Kun Tartibi v3 databases are encrypted in place and migrated without data loss.
 
 ## Building
@@ -149,3 +151,7 @@ Calendar API and Gmail API. See [docs/INSTALL.md](docs/INSTALL.md).
 
 See [NOTICE.md](NOTICE.md). The bundled openWakeWord models are licensed **CC BY-NC-SA 4.0**
 (non-commercial). For commercial distribution, use a Picovoice key or train your own model.
+
+Telefon va xabarlar buyruqlari, ruxsatlar va Android cheklovlari: [qoʻllanma](docs/PHONE_COMMUNICATIONS.md).
+
+Keyingi AI, ovoz, test, xavfsizlik va sinxronlash bosqichlari: [mahsulot rejasi](docs/PRODUCT_ROADMAP.md).

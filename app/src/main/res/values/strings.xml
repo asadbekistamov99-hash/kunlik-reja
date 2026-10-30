@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Jarvis Ultra</string>
+    <string name="phone_control_description">Jarvis siz bergan buyruqlar bilan boshqa ilovalarni o‘qiydi va boshqaradi: tugma bosish, matn kiritish va o‘yin yurishlari. AI o‘yin rejimi alohida rozilikdan so‘ng ekran tasvirini Gemini xizmatiga yuboradi. Stop Jarvis buyrug‘i boshqaruvni to‘xtatadi. Ruxsatni Android sozlamalaridan istalgan payt o‘chirish mumkin.</string>
 </resources>

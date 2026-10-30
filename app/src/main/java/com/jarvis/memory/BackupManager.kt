@@ -99,7 +99,7 @@ object BackupSerializer {
         put("reminders", JSONArray(s.reminders.map { r ->
             JSONObject().put("id", r.id).put("taskId", r.taskId ?: JSONObject.NULL).put("title", r.title)
                 .put("message", r.message).put("triggerAtMillis", r.triggerAtMillis)
-                .put("repeatIntervalMinutes", r.repeatIntervalMinutes).put("isActive", r.isActive)
+                .put("firstTriggerAtMillis", r.firstTriggerAtMillis).put("repeatIntervalMinutes", r.repeatIntervalMinutes).put("isActive", r.isActive)
                 .put("createdAt", r.createdAt)
         }))
         put("memories", JSONArray(s.memories.map { m ->
@@ -147,7 +147,8 @@ object BackupSerializer {
                     id = o.getLong("id"), taskId = if (o.isNull("taskId")) null else o.getInt("taskId"),
                     title = o.getString("title"), message = o.optString("message"),
                     triggerAtMillis = o.getLong("triggerAtMillis"), repeatIntervalMinutes = o.optInt("repeatIntervalMinutes"),
-                    isActive = o.optBoolean("isActive", true), createdAt = o.optLong("createdAt")
+                    isActive = o.optBoolean("isActive", true), createdAt = o.optLong("createdAt"),
+                    firstTriggerAtMillis = o.optLong("firstTriggerAtMillis", o.getLong("triggerAtMillis"))
                 )
             },
             memories = arr("memories").mapObjects { o ->
