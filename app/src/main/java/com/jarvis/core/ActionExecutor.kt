@@ -236,7 +236,7 @@ class ActionExecutor(
     }
 
     private suspend fun resolveTask(intent: ResolvedIntent, parsed: ParsedCommand): Task? {
-        intent.slot(ResolvedIntent.TITLE)?.let { title -> tasks.findByTitle(title)?.let { return it } }
+        intent.slot(ResolvedIntent.TITLE)?.let { title -> tasks.findByExactTitle(title)?.let { return it } }
         val idx = context.referencedIndex(parsed.body) ?: return null
         val list = context.lastTasks
         if (list.isEmpty()) return null
@@ -263,7 +263,11 @@ class ActionExecutor(
             tasks.updateTask(task.copy(isCompleted = true))
             val remaining = tasks.tasksFor(clock().toLocalDate().toString()).count { !it.isCompleted && it.id != task.id }
             val extra = buildString {
-                if (task.deadline.isNotBlank() && task.deadline <= clock().toLocalDate().toString()) append(" Muddatidan oldin bajarildi!")
+                if (task.deadline.isNotBlank()) {
+                    val today = clock().toLocalDate().toString()
+                    if (task.deadline > today) append(" Muddatidan oldin bajarildi!")
+                    else if (task.deadline < today) append(" Muddatidan kech bajarildi.")
+                }
                 if (remaining == 0) append(" Bugungi barcha ishlar tugadi, barakalla!")
                 else append(" Bugun yana $remaining ta vazifa qoldi.")
             }
@@ -273,7 +277,15 @@ class ActionExecutor(
 
     private suspend fun deleteTask(intent: ResolvedIntent, parsed: ParsedCommand): JarvisResponse {
         val task = resolveTask(intent, parsed)
-            ?: return JarvisResponse("O'chiriladigan vazifani topa olmadim.", intent.type, success = false)
+            ?: intent.slot(ResolvedIntent.TITLE)?.let { title ->
+                val candidates = tasks.search(title).filter { !it.isCompleted }
+                if (candidates.size == 1) {
+                    val candidate = candidates.single()
+                    context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to candidate.title))
+                    return JarvisResponse("\"${candidate.title}\" vazifasini o'chiraymi?", intent.type, expectsReply = true)
+                }
+                null
+            } ?: return JarvisResponse("O'chiriladigan vazifani topa olmadim.", intent.type, success = false)
         context.pendingConfirmation = intent.copy(slots = intent.slots + (ResolvedIntent.TITLE to task.title))
         return JarvisResponse("\"${task.title}\" vazifasini o'chiraymi?", intent.type, expectsReply = true)
     }

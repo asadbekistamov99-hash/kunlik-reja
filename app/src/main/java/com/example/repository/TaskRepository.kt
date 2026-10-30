@@ -70,11 +70,19 @@ class TaskRepository(
         if (q.isBlank()) return null
         val all = taskDao.getAll().sortedWith(compareBy<Task> { it.isCompleted }.thenByDescending { it.timestampMillis })
         all.firstOrNull { it.title.lowercase(Locale.ROOT) == q }?.let { return it }
-        all.firstOrNull { it.title.lowercase(Locale.ROOT).contains(q) || q.contains(it.title.lowercase(Locale.ROOT)) }?.let { return it }
+        if (q.length >= 3) {
+            all.firstOrNull { it.title.lowercase(Locale.ROOT).contains(q) || q.contains(it.title.lowercase(Locale.ROOT)) }?.let { return it }
+        }
         val words = q.split(' ').filter { it.length >= 3 }.map { it.take(5) }
         if (words.isEmpty()) return null
         return all.maxByOrNull { t -> words.count { w -> t.title.lowercase(Locale.ROOT).contains(w) } }
             ?.takeIf { t -> words.any { w -> t.title.lowercase(Locale.ROOT).contains(w) } }
+    }
+
+    suspend fun findByExactTitle(query: String): Task? {
+        val q = query.trim().lowercase(Locale.ROOT)
+        if (q.isBlank()) return null
+        return taskDao.getAll().firstOrNull { it.title.trim().lowercase(Locale.ROOT) == q }
     }
 
     companion object {
