@@ -127,6 +127,8 @@ class IntentResolver {
         if (Regex("""\bdinamik\w*\b""").containsMatchIn(head) && Regex("""\b(?:yoq|o'chir)\w*""").containsMatchIn(head)) {
             return hit(IntentType.PHONE_SETTING, 1f, ResolvedIntent.CONTENT to if (head.contains("o'chir")) "SPEAKER_OFF" else "SPEAKER_ON")
         }
+        if (callNoun && Regex("""\b(?:tugat|yakunla|uz|to'xta)\w*\b""").containsMatchIn(head))
+            return hit(IntentType.PHONE_SETTING, 1f, ResolvedIntent.CONTENT to "CALL_END")
         if (Regex("""\bmikrofon\w*""").containsMatchIn(head) && Regex("""\b(?:yoq|o'chir)\w*""").containsMatchIn(head)) {
             if (callNoun) return hit(IntentType.PHONE_SETTING, 1f, ResolvedIntent.CONTENT to if (head.contains("o'chir")) "CALL_MIC_OFF" else "CALL_MIC_ON")
             return hit(if (head.contains("o'chir")) IntentType.PAUSE_MICROPHONE else IntentType.RESUME_MICROPHONE, 1f)
@@ -343,7 +345,7 @@ class IntentResolver {
     companion object {
         private val HHMM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
-        private val STOP_RE = Regex("""(?:tugat|to'xta|to'xtat|bas|yetarli|xayr|stop|o'chir o'zingni|jim bo'l)(?:ing|gin|ish)?(?:\s+jarvis)?""")
+        private val STOP_RE = Regex("""^(?:(?:tugat|to'xta|to'xtat|bas|yetarli|xayr|stop|o'chir o'zingni|jim bo'l)(?:ing|gin|ish)?(?:\s+jarvis)?|jarvis\s+stop)$""")
         private val START_RE = Regex("""(?:boshla|boshlaymiz|boshlagin|ishga tush|uyg'on|tayyormisan|eshit|eshityapsanmi|labbay)""")
 
         private val PATTERNS_RE = Regex("""\b(?:ish odatlari\w*|ish uslub\w*|qachon samarali|qaysi vaqtda samarali|samaradorlig\w*|unumdorlig\w*|ish tahlil\w*)""")

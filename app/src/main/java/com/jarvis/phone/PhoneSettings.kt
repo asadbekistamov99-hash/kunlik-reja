@@ -28,6 +28,12 @@ class PhoneSettings(private val context: Context, private val launcher: Activity
             val accepted = driver.act(screen, PhoneStep(PhoneAction.CLICK, node.id))
             return DeviceResult(if (accepted) "Yangi qo'ng'iroq oynasini ochish buyrug'i yuborildi. Raqamni tanlang va qo'ng'iroqni tasdiqlang." else "Yangi qo'ng'iroq tugmasi bosilmadi.", false)
         }
+        if (command == "CALL_END") {
+            val names = setOf("end call", "tugatish", "qo'ng'iroqni tugatish", "qo'ng'iroqni yakunlash", "завершить вызов")
+            val node = screen.nodes.firstOrNull { it.clickable && names.any { name -> it.label.equals(name, true) } }
+                ?: return DeviceResult("Qo'ng'iroqni tugatish tugmasi topilmadi.", false)
+            return DeviceResult(if (driver.act(screen, PhoneStep(PhoneAction.CLICK, node.id))) "Qo'ng'iroq tugatildi." else "Qo'ng'iroqni tugatib bo'lmadi.", true)
+        }
         if (command !in setOf("SPEAKER_ON", "SPEAKER_OFF", "CALL_MIC_ON", "CALL_MIC_OFF"))
             return DeviceResult("Telefon sozlamasi buyrug'i tushunilmadi.", false)
         val speaker = command.startsWith("SPEAKER")
