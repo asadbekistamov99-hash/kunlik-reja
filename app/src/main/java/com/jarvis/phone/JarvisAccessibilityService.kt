@@ -13,6 +13,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.WindowManager
 import android.widget.TextView
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.PixelFormat
 import android.view.Gravity
 import android.view.View
@@ -56,13 +57,24 @@ class JarvisAccessibilityService : AccessibilityService(), PhoneDriver {
         fun install(service: JarvisAccessibilityService) {
             if (service.testButton != null) return
             val button = TextView(service).apply {
-                text = "A?"; textSize = 14f; setTextColor(Color.WHITE); setBackgroundColor(0xff263238.toInt())
-                setPadding(18, 10, 18, 10); contentDescription = "Test savolini tahlil qilish"
+                text = "✦"; textSize = 25f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(0xff2979ff.toInt())
+                    setStroke(2, 0xff82b1ff.toInt())
+                }
+                elevation = 10f
+                contentDescription = "Test savolini tahlil qilish"
                 setOnClickListener { service.scopeTest() }
             }
             val params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.END; y = 180 }
+                PixelFormat.TRANSLUCENT).apply {
+                    gravity = Gravity.TOP or Gravity.END
+                    y = 180
+                    width = (56 * service.resources.displayMetrics.density).toInt()
+                    height = width
+                }
             service.getSystemService(WindowManager::class.java)?.addView(button, params); service.testButton = button
         }
         fun remove(service: JarvisAccessibilityService) { service.testButton?.let { service.getSystemService(WindowManager::class.java)?.removeView(it) }; service.testButton = null }
