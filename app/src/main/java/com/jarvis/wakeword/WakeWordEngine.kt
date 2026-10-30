@@ -65,7 +65,7 @@ class PorcupineWakeWordEngine(
 class OpenWakeWordEngine(
     private val context: Context,
     private val sensitivity: Float,
-    private val cooldownMs: Long = 2000
+    private val cooldownMs: Long = 3000
 ) : WakeWordEngine {
     override val name = "openWakeWord"
     override val keywordLabel = "Hey Jarvis"
@@ -74,7 +74,9 @@ class OpenWakeWordEngine(
     private var lastDetection = 0L
 
     /** Maps the 0.1..0.95 sensitivity slider to a score threshold (higher sensitivity = lower threshold). */
-    private val threshold: Float get() = (0.82f - sensitivity * 0.68f).coerceIn(0.16f, 0.8f)
+    // The old default threshold was too permissive and treated nearby conversation as a wake word.
+    // Keep sensitivity useful while requiring a strong two-word "Hey Jarvis" match.
+    private val threshold: Float get() = (0.92f - sensitivity * 0.4f).coerceIn(0.55f, 0.9f)
 
     override fun start(onDetected: () -> Unit, onError: (Throwable) -> Unit) {
         val m = try {
