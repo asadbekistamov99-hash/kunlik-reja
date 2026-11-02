@@ -27,6 +27,7 @@ import com.jarvis.wakeword.WakeWordEngine
 import com.jarvis.wakeword.WakeWordEngineFactory
 import com.example.notification.NotificationHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -43,6 +44,8 @@ class JarvisForegroundService : LifecycleService(), WakeController {
     @Volatile private var userPaused = false
     @Volatile private var systemPaused = false
     @Volatile private var detectionActive = false
+    /** Consecutive microphone failures of the current engine; reset by a detection or a finished turn. */
+    @Volatile private var micRetries = 0
 
     private val systemReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -144,7 +147,11 @@ class JarvisForegroundService : LifecycleService(), WakeController {
         wakeEngine?.stop()
     }
 
-    override fun resumeDetection() = applyDetectionState()
+    override fun resumeDetection() {
+        // A finished voice turn is a fresh start: the microphone has just been handed back.
+        micRetries = 0
+        applyDetectionState()
+    }
 
     override fun pauseMicrophone() {
         userPaused = true
@@ -196,7 +203,10 @@ class JarvisForegroundService : LifecycleService(), WakeController {
             detectionActive = true
             lifecycleScope.launch(Dispatchers.Default) {
                 engine.start(
-                    onDetected = { lifecycleScope.launch(Dispatchers.Main) { container.voice.onWakeWord() } },
+                    onDetected = {
+                        micRetries = 0
+                        lifecycleScope.launch(Dispatchers.Main) { container.voice.onWakeWord() }
+                    },
                     onError = { e ->
                         // Ignore a late callback from an engine that has already been replaced.
                         if (wakeEngine === engine) {
@@ -212,7 +222,7 @@ class JarvisForegroundService : LifecycleService(), WakeController {
                                     container.voice.setStandby(AssistantStatus.STANDBY, fallback.name, fallback.keywordLabel)
                                     applyDetectionState()
                                 } else {
-                                    container.voice.setStandby(AssistantStatus.ERROR)
+                                    retryDetection(engine)
                                 }
                             }
                         }
@@ -228,6 +238,23 @@ class JarvisForegroundService : LifecycleService(), WakeController {
             container.voice.setStandby(AssistantStatus.PAUSED)
         }
         updateNotification()
+    }
+
+    /**
+     * The microphone is often busy for a moment (a call, the speech recognizer finishing a turn).
+     * Retry with a growing pause instead of going deaf until the next voice turn.
+     */
+    private fun retryDetection(engine: WakeWordEngine) {
+        if (micRetries >= MAX_MIC_RETRIES) {
+            Log.w(TAG, "Microphone still unavailable after $micRetries retries")
+            container.voice.setStandby(AssistantStatus.ERROR)
+            return
+        }
+        micRetries++
+        lifecycleScope.launch(Dispatchers.Main) {
+            delay(RETRY_BASE_MS * micRetries)
+            if (wakeEngine === engine && !detectionActive) applyDetectionState()
+        }
     }
 
     private fun acquireWakeLock() {
@@ -286,6 +313,8 @@ class JarvisForegroundService : LifecycleService(), WakeController {
         const val ACTION_STOP = "com.jarvis.STOP"
         const val ACTION_TOGGLE_PAUSE = "com.jarvis.TOGGLE_PAUSE"
         const val ACTION_LISTEN = "com.jarvis.LISTEN"
+        private const val MAX_MIC_RETRIES = 4
+        private const val RETRY_BASE_MS = 1500L
 
         @Volatile var isRunning = false
             private set
