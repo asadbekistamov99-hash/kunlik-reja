@@ -68,6 +68,7 @@ class VoskKeywordEngine(
     private val audio = AudioListener(context, frameSize = FRAME)
     private val matcher = JarvisKeywordMatcher((0.96f - sensitivity * 0.38f).coerceIn(0.58f, 0.95f))
     private var recognizer: Recognizer? = null
+    private val speechGain = SpeechGain()
     private var lastDetection = 0L
 
     override fun start(onDetected: () -> Unit, onError: (Throwable) -> Unit) {
@@ -96,9 +97,11 @@ class VoskKeywordEngine(
         fun feed(frame: ShortArray): Boolean =
             rec.acceptWaveForm(frame, frame.size) && matcher.onResult(rec.result)
 
+        speechGain.reset()
         audio.start(
-            onFrame = { frame ->
+            onFrame = { raw ->
                 try {
+                    val frame = speechGain.apply(raw)
                     val level = AudioListener.rms(frame)
                     val voiced = level > maxOf(MIN_SPEECH_LEVEL, noiseFloor * 3f)
                     if (!active) {
@@ -140,6 +143,6 @@ class VoskKeywordEngine(
         const val FRAME = 1600 // 100 ms
         const val PRE_ROLL_FRAMES = 5
         const val END_SILENCE_FRAMES = 8
-        const val MIN_SPEECH_LEVEL = 0.006f
+        const val MIN_SPEECH_LEVEL = 0.002f
     }
 }

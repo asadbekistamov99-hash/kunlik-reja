@@ -71,6 +71,7 @@ class OpenWakeWordEngine(
     override val keywordLabel = "Hey Jarvis"
     private val audio = AudioListener(context)
     private var model: KeywordDetector? = null
+    private val gain = SpeechGain()
     private var lastDetection = 0L
 
     /** Maps the 0.1..0.95 sensitivity slider to a score threshold (higher sensitivity = lower threshold). */
@@ -86,8 +87,10 @@ class OpenWakeWordEngine(
             return
         }
         m.reset()
+        gain.reset()
         audio.start(
-            onFrame = { frame ->
+            onFrame = { raw ->
+                val frame = gain.apply(raw)
                 val score = try { m.process(frame) } catch (t: Throwable) { onError(t); 0f }
                 val now = SystemClock.elapsedRealtime()
                 if (score >= threshold && now - lastDetection > cooldownMs) {

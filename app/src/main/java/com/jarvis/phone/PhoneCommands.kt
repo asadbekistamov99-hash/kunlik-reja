@@ -33,12 +33,30 @@ class PhoneCommands(private val context: Context, private val launcher: Activity
         }
         val wellKnown = wellKnownPackage?.let { pkg -> installed.singleOrNull { it.packageName == pkg } }
         if (wellKnown != null) return launchInstalled(wellKnown)
-        val exact = installed.filter { app -> app.name.equals(query, true) || app.packageName.equals(query, true) }
-        val matches = exact.ifEmpty { installed.filter { app -> terms.any { app.name.contains(it, true) || app.packageName.contains(it, true) } } }
+        val matches = bestMatches(installed, terms)
         if (matches.size != 1) return DeviceResult(if (matches.isEmpty()) "Bu ilova topilmadi: $name." else
             "Bir nechta ilova topildi. To'liq nomini ayting: ${matches.joinToString { it.name }}.", false)
         val app = matches.single()
         return launchInstalled(app)
+    }
+
+    /**
+     * Ranks candidates by how well the spoken name matches the app's label, so "instagram" picks
+     * "Instagram" and not "Edits" (its package name also contains "instagram"). Package names are
+     * only consulted when no label matches at all.
+     */
+    private fun bestMatches(installed: List<App>, terms: List<String>): List<App> {
+        val tiers: List<(App) -> Boolean> = listOf(
+            { app -> terms.any { app.name.equals(it, true) } },
+            { app -> terms.any { app.name.startsWith(it, true) } },
+            { app -> terms.any { app.name.contains(it, true) } },
+            { app -> terms.any { app.packageName.equals(it, true) || app.packageName.contains(it, true) } }
+        )
+        for (tier in tiers) {
+            val hits = installed.filter(tier)
+            if (hits.isNotEmpty()) return hits
+        }
+        return emptyList()
     }
 
     private suspend fun launchInstalled(app: App): DeviceResult {

@@ -45,7 +45,7 @@ class KeywordDetector(
      * Feeds one 1280-sample frame and returns the keyword probability. During sustained silence the
      * expensive embedding + classifier stages are skipped, which is what keeps idle battery use low.
      */
-    fun process(frame: ShortArray, silenceThreshold: Float = 0.004f): Float {
+    fun process(frame: ShortArray, silenceThreshold: Float = 0.0015f): Float {
         require(frame.size == SAMPLES_PER_FRAME) { "Expected $SAMPLES_PER_FRAME samples" }
         rawBuffer.push(frame)
         appendMel(rawBuffer.snapshot())
