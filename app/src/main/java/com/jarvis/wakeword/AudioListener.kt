@@ -55,6 +55,7 @@ class AudioListener(
         thread = null
     }
 
+    @SuppressLint("MissingPermission") // permission is checked in start() before this thread is created
     private fun capture(run: AtomicBoolean, onFrame: (ShortArray) -> Unit, onError: (Throwable) -> Unit) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
         var record: AudioRecord? = null
