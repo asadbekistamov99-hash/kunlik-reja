@@ -21,42 +21,10 @@ class PhoneCommands(private val context: Context, private val launcher: Activity
 
     suspend fun open(name: String): DeviceResult {
         games.stop()
-        val query = name.trim().lowercase()
-        val aliases = mapOf("shaxmat" to "chess", "telegram" to "telegram", "instagram" to "instagram")
-        val stem = query.removeSuffix("ga").removeSuffix("ni")
-        val terms = listOf(query, stem, aliases[query], aliases[stem]).filterNotNull().filter { it.isNotBlank() }
-        val installed = apps()
-        val wellKnownPackage = when {
-            query.contains("instagram") || stem.contains("instagram") -> "com.instagram.android"
-            query.contains("telegram") || stem.contains("telegram") -> "org.telegram.messenger"
-            else -> null
-        }
-        val wellKnown = wellKnownPackage?.let { pkg -> installed.singleOrNull { it.packageName == pkg } }
-        if (wellKnown != null) return launchInstalled(wellKnown)
-        val matches = bestMatches(installed, terms)
+        val matches = AppMatcher.match(name, apps())
         if (matches.size != 1) return DeviceResult(if (matches.isEmpty()) "Bu ilova topilmadi: $name." else
             "Bir nechta ilova topildi. To'liq nomini ayting: ${matches.joinToString { it.name }}.", false)
-        val app = matches.single()
-        return launchInstalled(app)
-    }
-
-    /**
-     * Ranks candidates by how well the spoken name matches the app's label, so "instagram" picks
-     * "Instagram" and not "Edits" (its package name also contains "instagram"). Package names are
-     * only consulted when no label matches at all.
-     */
-    private fun bestMatches(installed: List<App>, terms: List<String>): List<App> {
-        val tiers: List<(App) -> Boolean> = listOf(
-            { app -> terms.any { app.name.equals(it, true) } },
-            { app -> terms.any { app.name.startsWith(it, true) } },
-            { app -> terms.any { app.name.contains(it, true) } },
-            { app -> terms.any { app.packageName.equals(it, true) || app.packageName.contains(it, true) } }
-        )
-        for (tier in tiers) {
-            val hits = installed.filter(tier)
-            if (hits.isNotEmpty()) return hits
-        }
-        return emptyList()
+        return launchInstalled(matches.single())
     }
 
     private suspend fun launchInstalled(app: App): DeviceResult {
