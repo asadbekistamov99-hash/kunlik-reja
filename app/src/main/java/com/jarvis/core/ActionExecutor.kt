@@ -130,7 +130,8 @@ class ActionExecutor(
         IntentType.THANKS -> JarvisResponse(pick("Arzimaydi! Yana nima yordam kerak?", "Doim xizmatingizdaman!",
             "Marhamat! Yana biror narsa bo'lsa, aytavering."), intent.type)
         IntentType.HELP -> JarvisResponse(HELP_TEXT, intent.type, card = ResponseCard("Buyruqlar", HELP_EXAMPLES))
-        IntentType.UNKNOWN -> intent.slot(ResolvedIntent.ANSWER)?.let { JarvisResponse(it, intent.type) }
+        // Gemini's conversational replies are successes; the offline hints are not.
+        IntentType.UNKNOWN -> intent.slot(ResolvedIntent.ANSWER)?.let { JarvisResponse(it, intent.type, success = intent.source == "gemini") }
             ?: JarvisResponse(pick("Kechirasiz, tushunmadim. Boshqacharoq aytib ko'ra olasizmi?",
                 "Buni to'liq anglay olmadim. \"Jarvis, yordam\" desangiz, nima qila olishimni aytib beraman.",
                 "Uzr, yana bir bor aytib bera olasizmi?"), intent.type, success = false)

@@ -43,7 +43,8 @@ class GeminiAgent(
                 put("parts", JSONArray().put(JSONObject().put("text", text)))
             }))
             put("generationConfig", JSONObject().apply {
-                put("temperature", 0.15)
+                // Warm enough for natural small talk, still low enough for reliable JSON intents.
+                put("temperature", 0.4)
                 put("maxOutputTokens", 512)
                 put("responseMimeType", "application/json")
                 put("responseSchema", JSONObject().apply {
@@ -84,7 +85,7 @@ class GeminiAgent(
             "Foydalanuvchi: $u\nJarvis: $a"
         }
         return """
-Sen Jarvis вЂ” o'zbek tilida ravon, tabiiy va aniq ishlovchi shaxsiy ovozli yordamchisan.
+Sen Jarvis — o'zbek tilida ravon, tabiiy va samimiy suhbatlashadigan shaxsiy ovozli yordamchisan.
 Hozirgi vaqt: ${context.now}
 Foydalanuvchi profili: ${context.profile}
 Bugungi vazifalar: ${context.todayTasks}
@@ -106,7 +107,7 @@ Foydalanuvchi buyrug'ini tahlil qilib, FAQAT quyidagi JSON formatida javob qayta
     "to": "<email qabul qiluvchi>",
     "subject": "<email mavzusi>",
     "body": "<email matni>",
-    "reply": "<foydalanuvchiga o'zbek tilida qisqa, tabiiy, iliq va aniq ovozli javob>"
+    "reply": "<foydalanuvchiga o'zbek tilida tabiiy, iliq va aniq ovozli javob; odatda 2-4 gap>"
   }
 }
 
@@ -118,7 +119,7 @@ Qoidalar:
 4. Agar foydalanuvchi vazifani o'chirishni so'rasa -> DELETE_TASK.
 5. Eslatma vaqtini o'zgartirish -> RESCHEDULE_REMINDER. Yangi eslatma yaratma. Sana aytilmasa bugun deb ol; o'tgan vaqtni ertaga surma.
 5a. Agar foydalanuvchi vazifa vaqtini o'zgartirishni so'rasa -> RESCHEDULE_TASK.
-6. Agar foydalanuvchi erkin savol bersa yoki suhbat qursa -> UNKNOWN va "reply" slotiga o'zbek tilida aniq, ravon, qisqa javob yoz.
+6. Agar foydalanuvchi erkin savol bersa, boshqa mavzuda gaplashmoqchi bo'lsa yoki suhbat qursa -> UNKNOWN va "reply" slotiga o'zbek tilida ravon, tabiiy javob yoz. Har qanday mavzuda (fan, hayot, maslahat, hazil, kundalik gap) javob ber; "tushunmadim" deb qochma. Savolga aniq javob ber, keyin suhbatni davom ettirishga qiziqish bildir.
 """.trimIndent()
     }
 

@@ -130,6 +130,8 @@ class VoiceSession(
     }
 
     private suspend fun conversationLoop() {
+        /** When the current stretch of silence began; 0 while the user is speaking or nothing has been asked. */
+        var silentSince = 0L
         while (currentCoroutineContext().isActive) {
             if (!stt.isAvailable()) {
                 engine.endSession()
@@ -143,7 +145,7 @@ class VoiceSession(
                     override fun onPartial(text: String) = _state.update { it.copy(partial = text) }
                     override fun onLevel(level: Float) = _state.update { it.copy(level = level) }
                     override fun onAlternatives(alternatives: List<String>) { alts = alternatives }
-                })
+                }, maxMillis = IDLE_TIMEOUT_MS)
                 _state.update { it.copy(sttEngine = stt.id) }
                 // Of the recognizer's guesses, act on the one Jarvis understands best.
                 if (alts.size > 1) engine.bestTranscript(alts) ?: heard else heard
@@ -157,10 +159,19 @@ class VoiceSession(
                 continue
             }
             if (text.isNullOrBlank()) {
-                if (!engine.isSessionActive) return
-                delay(750)
+                // Silence for the whole idle window means the conversation is over: back to standby.
+                // Recognizers can return "nothing heard" early, so keep listening until the window is spent.
+                val now = System.currentTimeMillis()
+                if (silentSince == 0L) silentSince = now
+                if (now - silentSince >= IDLE_TIMEOUT_MS) {
+                    engine.endSession()
+                    _state.update { it.copy(sessionActive = false, partial = "") }
+                    return
+                }
+                delay(500)
                 continue
             }
+            silentSince = 0L
             val response = think(text, alts)
             speak(response)
             if (response.endSession) return
@@ -208,5 +219,7 @@ class VoiceSession(
 
     private companion object {
         const val TAG = "VoiceSession"
+        /** How long Jarvis waits for a command after "Hey Jarvis" or a reply before going back to standby. */
+        const val IDLE_TIMEOUT_MS = 10_000L
     }
 }

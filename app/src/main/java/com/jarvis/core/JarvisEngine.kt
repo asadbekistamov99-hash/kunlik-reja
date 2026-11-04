@@ -171,12 +171,15 @@ class JarvisEngine(
         }
         val mode = settings().aiMode
         val agentReady = agent != null && mode != AiMode.OFFLINE_ONLY && agent.isAvailable()
-        if (!agentReady) return offline to understood
+        if (!agentReady) {
+            // Without the AI only commands work; say so instead of a bare "tushunmadim" for small talk.
+            return (if (offline.type == IntentType.UNKNOWN) noAgentReply(mode) else offline) to understood
+        }
         val useAgent = mode == AiMode.CLOUD_FIRST || offline.confidence < CONFIDENT
         if (!useAgent) return offline to understood
         val decided = agent!!.decide(parsed.body.ifBlank { parsed.original }, agentContext())
         return when {
-            decided == null -> offline to understood
+            decided == null -> (if (offline.type == IntentType.UNKNOWN) agentFailedReply() else offline) to understood
             // Keep the deterministic parse for dates/times the model may have left out.
             else -> {
                 val slots = if (decided.type in setOf(IntentType.ADD_REMINDER, IntentType.RESCHEDULE_REMINDER)) {
@@ -188,6 +191,18 @@ class JarvisEngine(
             }
         }
     }
+
+    private fun noAgentReply(mode: AiMode): ResolvedIntent = hint(
+        if (mode == AiMode.OFFLINE_ONLY) "Hozir faqat buyruqlarni bajara olaman. Erkin suhbat uchun Sozlamalarda onlayn AI rejimini yoqing."
+        else "Erkin suhbat uchun Sozlamalar bo'limida Gemini kalitini kiriting va internetga ulaning."
+    )
+
+    private fun agentFailedReply(): ResolvedIntent =
+        hint("Hozir javob bera olmadim. Internet aloqasini tekshirib, yana bir bor ayting.")
+
+    /** A canned UNKNOWN reply; `source` stays "offline", so the executor reports it as not successful. */
+    private fun hint(text: String): ResolvedIntent =
+        ResolvedIntent(IntentType.UNKNOWN, 0.1f, mapOf(ResolvedIntent.ANSWER to text))
 
     private suspend fun agentContext(): AgentContext {
         val now = clock()
