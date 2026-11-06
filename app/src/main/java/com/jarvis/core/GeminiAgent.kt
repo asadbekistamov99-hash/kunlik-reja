@@ -64,19 +64,14 @@ class GeminiAgent(
             .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
             .build()
 
-        val req = Request.Builder()
-            .url(endpoint)
-            .header("x-goog-api-key", key)
-            .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
-            .build()
-
-        runCatching {
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext null
-                val bodyStr = resp.body?.string() ?: return@withContext null
-                parseGeminiResponse(bodyStr)
-            }
-        }.getOrNull()
+        val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        listOf(endpoint, endpoint.replace("gemini-2.5-flash", "gemini-2.0-flash")).distinct().asSequence()
+            .mapNotNull { url -> runCatching {
+                client.newCall(Request.Builder().url(url).header("x-goog-api-key", key).post(body).build()).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use null
+                    parseGeminiResponse(resp.body?.string().orEmpty())
+                }
+            }.getOrNull() }.firstOrNull()
     }
 
     private fun buildSystemPrompt(context: AgentContext): String {
